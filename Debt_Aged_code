@@ -1,0 +1,2187 @@
+/******************************* Global Aged Debt Program**********************************************************************/
+
+/* Objective: Show how SAS can help us to manipulate data to explain, for example, how the customers debt
+is accumulated through the time.
+
+Introduction: For almost any company the aged Debt is a mandatory process to follow because 
+ not all the debt is easy to rescue. Time is relentless, and debt is not the exception.
+
+For that reason we will use a few tables with different customers info to discover what is
+the actual debt that the company must handle and what is their distribution in time*/
+
+
+/*STEP 1: Import Files to start the process*/
+
+/*1.1 Import Aged Debt: this is the file that contains all the info about the customers*/
+PROC IMPORT DATAFILE = "C:/Users/FranciscoM/Desktop/Debt Process/DB/Aged Debtors Position.xlsx"
+	OUT = WORK.AgedDebt
+	DBMS = XLSX
+	REPLACE;
+	SHEET = "Detailed_Transactions";
+RUN;
+
+/*1.2 Import Lpf in debtors: this is the file that contains all the late payments (debtor that we must 
+ erase from the debt)*/
+PROC IMPORT DATAFILE = "C:/Users/FranciscoM/Desktop/Debt Process/DB/LPF in Debtors.xlsx"
+	OUT = WORK.LPF
+	DBMS = XLSX
+	REPLACE;
+	GETNAMES = NO;
+	DATAROW = 3;
+	SHEET = "Detailed_Transactions";
+RUN;
+
+/*We need to put all the headers for the columns, regarding that "cust_ref" must be a number not a character*/
+DATA LPF;
+	SET LPF;
+	Concat = A ;
+	LPF = B ;
+	cust_ref = input(C , best12.) ;
+	cust_name = D ;
+	onboard_date = E ;
+	core_spid = F ;
+	water_spid = G ;
+	waste_spid = H ;
+	water_wholesaler = I ;
+	waste_wholesaler = J ;
+	dist = K ;
+	stand = L ;
+	portion = M ;
+	Payment_Method = N ;
+	Payment_Scheme = O ;
+	Payment_Frequency = P ;
+	Payment_Day = Q ;
+	date_eff = R ;
+	date_posted = S ;
+	sv_cat = T ;
+	sv_cat_desc = U ;
+	sv_type = V ;
+	sv_type_desc = W ;
+	trans_code = X ;
+	trans_code_desc = Y ;
+	billing_tran = Z ;
+	ctrl_code = AA ;
+	ctrl_code_desc = AB ;
+	trans_value = AC ;
+	vat_value = AD ;
+	vat_code = AE ;
+	vat_period = AF ;
+	acc_period = AG ;
+	creator_id = AH ;
+	batch = AI ;
+	bal_clear = AJ ;
+	bal_clear_v = AK ;
+	total_bal_clear = AL ;
+	trans_type = AM ;
+	reversal_ind = AN ;
+	charge_type = AO ;
+	trans_qty = AP ;
+	bill_no = AQ ;
+	line_no = AR ;
+	date_billed = AS ;
+	tariff = AT ;
+	tariff_description = AU ;
+	bill_core_spid = AV ;
+	bill_water_spid = AW ;
+	bill_waste_spid = AX ;
+	bill_water_wholesaler = AY ;
+	bill_waste_wholesaler = AZ ;
+	bill_dist = BA ;
+	bill_stand = BB ;
+	bill_portion = BC ;
+	Aged_Days = BD ;
+	Aged_Band = BE ;
+
+	DROP A ;
+	DROP B ;
+	DROP C ;
+	DROP D ;
+	DROP E ;
+	DROP F ;
+	DROP G ;
+	DROP H ;
+	DROP I ;
+	DROP J ;
+	DROP K ;
+	DROP L ;
+	DROP M ;
+	DROP N ;
+	DROP O ;
+	DROP P ;
+	DROP Q ;
+	DROP R ;
+	DROP S ;
+	DROP T ;
+	DROP U ;
+	DROP V ;
+	DROP W ;
+	DROP X ;
+	DROP Y ;
+	DROP Z ;
+	DROP AA ;
+	DROP AB ;
+	DROP AC ;
+	DROP AD ;
+	DROP AE ;
+	DROP AF ;
+	DROP AG ;
+	DROP AH ;
+	DROP AI ;
+	DROP AJ ;
+	DROP AK ;
+	DROP AL ;
+	DROP AM ;
+	DROP AN ;
+	DROP AO ;
+	DROP AP ;
+	DROP AQ ;
+	DROP AR ;
+	DROP AS ;
+	DROP AT ;
+	DROP AU ;
+	DROP AV ;
+	DROP AW ;
+	DROP AX ;
+	DROP AY ;
+	DROP AZ ;
+	DROP BA ;
+	DROP BB ;
+	DROP BC ;
+	DROP BD ;
+	DROP BE ;
+RUN;
+
+/*In case that some row does not have a cust_ref, we should remove it from the database*/
+proc sql;
+	DELETE 
+	FROM LPF
+	WHERE LPF.Concat = '';
+quit;
+
+/*******************************************************************************/
+/******************* Removing the Unmeasured not due ***************************/
+/*******************************************************************************/
+
+/*If the company has a deadline to measure the debt, here we can establish that cut.
+This data will be called "Unmeasured not due data"*/
+data deadline;
+
+/*Create a variable with the deadline*/
+Unmeasured = INPUT('01/04/2023', ddmmyy10.);
+run;
+
+/*Creating the table with the Unmeasured not due data*/
+PROC SQL;
+CREATE TABLE UND
+AS
+SELECT SUM(A.total_bal_clear)
+FROM Ageddebt AS A, deadline AS B
+WHERE A.date_eff - B.Unmeasured >=0;
+QUIT;
+
+/*we finished this part exporting the result in a general report file called 
+GLOBAL_AGED_DEBT*/
+proc EXPORT DATA = UND
+
+OUTFILE = "C:/Users/FranciscoM/Desktop/GLOBAL_AGED_DEBT.xlsx"
+DBMS = XLSX REPLACE;
+sheet= 'Unmeasured_not_due';
+
+RUN;
+
+PROC SQL;
+CREATE TABLE AGEDDEBT2
+AS
+SELECT A.*
+FROM AGEDDEBT2 AS A, deadline AS B
+WHERE A.date_eff - B.Unmeasured < 0;
+QUIT;
+
+DATA AGEDDEBT;
+	SET AGEDDEBT2;
+RUN;
+
+PROC DELETE DATA = WORK.AGEDDEBT2 WORK.UND WORK.DEADLINE;RUN;
+
+
+/*******************************************************************************/
+/*******************************************************************************/
+/*******************************************************************************/
+
+
+/*1.3 Import  Non Bills Revised: This are the latest payment list for each customer, so
+we must add this payments to our final table*/
+PROC IMPORT DATAFILE = "C:/Users/FranciscoM/Desktop/Debt Process/DB/non bills revised.xlsx"
+	OUT = WORK.NONBILLS
+	DBMS = XLSX
+	REPLACE;
+RUN;
+
+/*1.4 Import group identifier (to identify if the companies are Group Corporations, Non group Corporations,
+or just small business)*/
+PROC IMPORT DATAFILE = "C:/Users/FranciscoM/Desktop/Debt Process/DB/Copy of group identifier.xlsx"
+	OUT = WORK.GROUPE
+	DBMS = XLSX
+	REPLACE;
+	SHEET = "IFRS list";
+RUN;
+
+/*1.5 Import corp (no SME) identifier*/
+PROC IMPORT DATAFILE = "C:/Users/FranciscoM/Desktop/Debt Process/DB/Copy of group identifier.xlsx"
+	OUT = WORK.CORP
+	DBMS = XLSX
+	REPLACE;
+	GETNAMES = NO;
+	DATAROW = 2;
+	SHEET = "corp accts";
+RUN;
+
+/*1.6 Delete excess rows*/
+proc sql;
+	DELETE 
+	FROM AgedDebt
+	WHERE AgedDebt.cust_ref = '';
+quit;
+
+/*STEP 2: Adding columns*/
+
+/*With this code we can create a new table just with the columns that we will use 
+the rest of the process*/
+
+/*2.1 Select the right columns to create the new ones*/
+DATA ADDCOLUMNS3;
+	SET AGEDDEBT;
+	KEEP cust_ref	cust_name	onboard_date	date_posted	sv_cat_desc trans_value	total_bal_clear	bill_no	Aged_Days;
+RUN;
+
+/*2.2 Adding the Report Date*/
+PROC SQL;
+	ALTER TABLE ADDCOLUMNS3 
+	/*I must to put it in the correct format*/ 
+	ADD REPORT_DATE DATE;
+	ALTER TABLE ADDCOLUMNS3 
+	/*I must to put it in the correct format*/ 
+	ADD DAYS INT;
+	ALTER TABLE ADDCOLUMNS3 
+	ADD DIFFERENCE INT;
+	ALTER TABLE ADDCOLUMNS3 
+	ADD AGE NVARCHAR(20);
+	ALTER TABLE ADDCOLUMNS3 
+	ADD AGED_BANDS NVARCHAR(20);
+QUIT;
+
+/*2.3 PUT THE CORRECT REPORT DATE*/
+DATA ADDCOLUMNS3;
+	SET ADDCOLUMNS3;
+	INFORMAT REPORT_DATE $10.;
+	REPORT_DATE = input ('01/04/2023', DDMMYY10.);
+run;
+
+/*2.4 Adding DAYS column*/
+DATA ADDCOLUMNS3;
+	SET ADDCOLUMNS3;
+	DAYS = (REPORT_DATE - date_posted + 1);
+run; 
+
+/*2.5 Adding DIFFERENCE column*/
+PROC SQL;
+	UPDATE ADDCOLUMNS3 SET DIFFERENCE = (Aged_days - DAYS);
+QUIT;
+
+/*2.6 Adding AGE column*/
+DATA ADDCOLUMNS3;
+	SET ADDCOLUMNS3;
+	AGE2 = year(REPORT_DATE) - year(onboard_date);
+	/*This code concatenate in SAS*/
+	AGE = CATX('Year ',AGE2,'+');
+	DROP AGE2;
+RUN;
+
+/*2.7 Adding AGED_BANDS column*/
+
+DATA ADDCOLUMNS3;
+	SET ADDCOLUMNS3;
+	/*These are the intervals in which we will locate the debts*/
+	IF Days < 0 THEN AGED_BANDS = '< 0 Days';
+	ELSE IF Days < 31 AND Days >= 0 THEN AGED_BANDS = '000-030 Days';
+	ELSE IF Days < 61 AND Days >= 31 THEN AGED_BANDS = '031-060 Days';
+	ELSE IF Days < 91 AND Days >= 61 THEN AGED_BANDS = '061-090 Days';
+	ELSE IF Days < 121 AND Days >= 91 THEN AGED_BANDS = '091-120 Days';
+	ELSE IF Days < 151 AND Days >= 121 THEN AGED_BANDS = '121-150 Days';
+	ELSE IF Days < 181 AND Days >= 151 THEN AGED_BANDS = '151-180 Days';
+	ELSE IF Days < 211 AND Days >= 181 THEN AGED_BANDS = '181-210 Days';
+	ELSE IF Days < 241 AND Days >= 211 THEN AGED_BANDS = '211-240 Days';
+	ELSE IF Days < 271 AND Days >= 241 THEN AGED_BANDS = '241-270 Days';
+	ELSE IF Days < 301 AND Days >= 271 THEN AGED_BANDS = '271-300 Days';
+	ELSE IF Days < 331 AND Days >= 301 THEN AGED_BANDS = '301-330 Days';
+	ELSE IF Days <= 365 AND Days >= 331 THEN AGED_BANDS = '331-365 Days';
+	ELSE IF Days < 365*2 AND Days > 365*1 THEN AGED_BANDS = 'Year 2';
+	ELSE IF Days < 365*3 AND Days >= 365*2 THEN AGED_BANDS = 'Year 3';
+	ELSE IF Days < 365*4 AND Days >= 365*3  THEN AGED_BANDS = 'Year 4';
+	ELSE IF Days < 365*5 AND Days >= 365*4  THEN AGED_BANDS = 'Year 5';
+	ELSE IF Days < 365*6 AND Days >= 365*5   THEN AGED_BANDS = 'Year 6';
+	ELSE AGED_BANDS = 'Year 6+';
+RUN;
+
+/*2.8 DELETE EXCESIVE ROWS (just in case)*/
+proc sql;
+	DELETE 
+	FROM ADDCOLUMNS3
+	WHERE ADDCOLUMNS3.cust_ref = '';
+quit;
+
+/*2.9 Change the format of cust_ref to number*/
+DATA ADDCOLUMNS3;
+	SET ADDCOLUMNS3;
+	cust = input(cust_ref, best12.);
+	DROP cust_ref;
+	RENAME cust = cust_ref;
+run;
+
+/*2.10 Here I created the final table that we'll use to add the corp names*/
+DATA ADDNAMES;
+	SET ADDCOLUMNS3;
+RUN;
+
+/*STEP 3: Remove the late pay fees*/
+/*WITH THIS CODE I CAN REMOVE ALL THE LPF OF MY DB (ACCORDING TO JEROME'S CRITERIA)*/
+
+PROC SQL;
+	CREATE TABLE RESUMEN
+	AS
+	SELECT A.*
+	FROM ADDCOLUMNS3 AS A LEFT JOIN lpf
+	ON A.cust_ref = lpf.cust_ref AND A.trans_value = lpf.trans_value and A.bill_no = lpf.bill_no
+	WHERE lpf.trans_value IS NULL AND lpf.bill_no IS NULL
+	ORDER BY cust_ref;
+QUIT;
+
+/*Here I will remove all the later payments that remains (NEW ISSUE ADDED FROM JEROME)*/
+PROC SQL;
+	CREATE TABLE RESUMEN3
+	AS
+	SELECT A.*
+	FROM RESUMEN AS A 
+	WHERE A.sv_cat_desc <> 'Late Payment'
+	ORDER BY cust_ref;
+QUIT;
+
+/*3.2 Create RESUMEN2 table to obtain the lpf removed*/
+PROC SQL;
+	CREATE TABLE RESUMEN2
+	AS
+	SELECT A.*
+	FROM ADDCOLUMNS3 AS A LEFT JOIN RESUMEN AS lpf
+	ON A.cust_ref = lpf.cust_ref AND A.trans_value = lpf.trans_value and A.bill_no = lpf.bill_no
+	WHERE lpf.trans_value IS NULL AND lpf.bill_no IS NULL
+	ORDER BY cust_ref;
+QUIT;
+
+/*********SUMMARY DEBT PART***************************************************************************/
+
+/* A.1 LPF Summary - check*/
+/*Here we have to sum all the total_bal_column to check the total amount of 
+late payment fees into the period*/
+
+
+/*A.1.1 Create the LPF_Summary Table*/
+proc sql;
+CREATE TABLE LPF_Summary1
+AS
+SELECT SUM(total_bal_clear) as LPF_Summary
+FROM RESUMEN2;
+quit;
+
+/*A.1.1 Create the LPF_Summary Table*/
+proc sql;
+CREATE TABLE LPF_Summary3
+AS
+SELECT SUM(total_bal_clear) as LPF_Summary
+FROM RESUMEN AS A 
+WHERE A.sv_cat_desc = 'Late Payment';
+quit;
+
+proc sql;
+CREATE TABLE LPF_Summary
+AS
+SELECT A.LPF_Summary + B.LPF_Summary as LPF_Summary
+FROM  LPF_Summary1 as A, LPF_Summary3 as B;
+quit;
+
+/*A.1.2 Export the LPF_Summary Table*/
+proc EXPORT DATA = LPF_Summary
+
+OUTFILE = "C:/Users/FranciscoM/Desktop/GLOBAL_AGED_DEBT.xlsx"
+DBMS = XLSX REPLACE;
+sheet= 'LPF_Summary';
+
+RUN;
+
+DATA Addcolumns3;
+	SET Addcolumns3;
+	DROP sv_cat_desc;
+RUN;
+
+DATA RESUMEN;
+	SET RESUMEN3;
+RUN;
+
+
+/*********SUMMARY DEBT PART***************************************************************************/
+
+/*STEP 4: CREATE CORP ACCOUNTS*/
+
+/* I MUST CREATE A COLUMN WITH THE CORRECT FORMAT TO MAKE A VLOOKUP*/
+
+/*4.1 Change the format of cust_ref to number*/
+DATA RESUMEN;
+	SET RESUMEN;
+	cust_ref2 = input (cust_ref, best12.);
+run;
+
+/*4.2 EXTRACT ALL THE CORP ACCOUNTS*/
+PROC SQL;
+	CREATE TABLE CORPACOUNTS
+	AS
+	SELECT A.*
+	FROM RESUMEN AS A, Corp
+	where A.cust_ref2 = Corp.A;
+QUIT;
+
+/*4.3 Add an ID number to make a future comparison WITH GROUP TABLE*/
+DATA CORPACOUNTS;
+	set CORPACOUNTS;
+	ID = _N_;
+RUN;
+/*4.4 obtain all the small accounts separate (the SME) */
+PROC SQL;
+	CREATE TABLE SME
+	AS
+	SELECT A.*
+	FROM RESUMEN AS A 
+	LEFT JOIN Corp AS B
+	ON A.cust_ref2 = B.A
+	WHERE B.A <> A.cust_ref2
+	ORDER BY A.cust_ref2;	
+QUIT;
+
+
+/*4.5 Add new rows that allows to cut off the first copied row from the future pivot table to make
+and ensure that we are considering all the aged_debt intervals */
+PROC SQL;
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'000 Days',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'000-030 Days',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'031-060 Days',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'061-090 Days',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'091-120 Days',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'121-150 Days',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'151-180 Days',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'181-210 Days',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'211-240 Days',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'241-270 Days',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'271-300 Days',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'301-330 Days',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'331-365 Days',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 2',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 3',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 4',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 5',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 6',	4,	4
+	);
+	INSERT INTO SME VALUES ('4',	NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 6+',	4,	4
+	);
+	/*Obs: all the new rows will be added on SME table, so we just have to use smeageddebt for everything*/
+QUIT;
+
+/*4.6 Change the cust_ref format on the tables*/
+DATA SME;
+	SET SME;
+	DROP cust_ref;
+	RENAME cust_ref2 = cust_ref;
+run;
+
+DATA CORPACOUNTS;
+	SET CORPACOUNTS;
+	DROP cust_ref;
+	RENAME cust_ref2 = cust_ref;
+run;
+
+/*STEP 5: CREATE THE SME PIVOT TABLE*/
+
+/*5.1 Using proc tabulate to create a pivot table adding up the total_bar_clear column in each Aged_Band
+for every cust_ref*/
+
+/*OBS: I NEED TO PUT THE CORRECT PATH TO PUT THE SAMPLE EXCEL*/
+ods excel file = "C:/Users/FranciscoM/Desktop/SAMPLE.xlsx"; 
+proc tabulate
+	data = sme;
+	/*THE COLUMNS TO SEGMENTATE*/
+	class AGED_BANDS cust_ref;
+	var total_bal_clear;
+	tables cust_ref, AGED_BANDS*total_bal_clear*(sum);
+run;
+ods excel close;
+
+/*5.2 Import the pivot table to SAS*/
+PROC IMPORT DATAFILE = "C:/Users/FranciscoM/Desktop/SAMPLE.xlsx"
+	OUT = WORK.SMEAGEDDEBT
+	DBMS = XLSX
+	REPLACE;
+	GETNAMES = NO;
+	/*FROM THIS ROW STARTS TO READ*/
+	DATAROW = 7;
+RUN;
+
+/*5.3 Delete excess rows*/
+proc sql;
+	DELETE 
+	FROM SMEAGEDDEBT
+	WHERE SMEAGEDDEBT.A = '';
+quit;
+
+/*STEP 6: Adding the NEW COLUMNS and import the NonBills table*/
+
+/*6.1 ADDING ALL NEW COLUMNS IN A PROPER FORMAT*/
+DATA SMEAGEDDEBT;
+	SET SMEAGEDDEBT;
+	cust_ref = A;
+	LESS_O_Days= input (B , best12.);
+	FROM_O_TO_3O_Days= input (C , best12.);
+	FROM_31_TO_6O_Days= input (D , best12.);
+	FROM_61_TO_9O_Days= input (E , best12.);
+	FROM_91_TO_12O_Days= input (F , best12.);
+	FROM_121_TO_15O_Days= input (G , best12.);
+	FROM_151_TO_18O_Days= input (H , best12.);
+	FROM_181_TO_21O_Days= input (I , best12.);
+	FROM_211_TO_24O_Days= input (J , best12.);
+	FROM_241_TO_27O_Days= input (K , best12.);
+	FROM_271_TO_3OO_Days= input (L , best12.);
+	FROM_3O1_TO_33O_Days= input (M , best12.);
+	FROM_331_TO_365_Days= input (N , best12.);
+	Year_2= input (O , best12.);
+	Year_3= input (P , best12.);
+	Year_4= input (Q , best12.);
+	Year_5= input (R , best12.);
+	Year_6= input (S , best12.);
+	Year_6M= input (T , best12.);
+
+
+	DROP A;
+	DROP B;
+	DROP C;
+	DROP D;
+	DROP E;
+	DROP F;
+	DROP G;
+	DROP H;
+	DROP I;
+	DROP J;
+	DROP K;
+	DROP L;
+	DROP M;
+	DROP N;
+	DROP O;
+	DROP P;
+	DROP Q;
+	DROP R;
+	DROP S;
+	DROP T;
+RUN;
+/*6.2 here we change the name of the column to merge tables in the next step*/
+DATA new;
+	set Nonbills;
+	cust_ref = Customer;
+	DROP Customer;
+run;
+
+/*Obs: this is a left merge in SAS directly and easy*/
+/*6.3 SET THE SME TABLE WITH THE CORRECT COLUMNS*/
+
+
+DATA MERGE_NON;
+	MERGE SMEAGEDDEBT (IN = A) NEW (IN = B);
+	BY cust_ref;
+	IF A;
+RUN;
+
+/*********SUMMARY DEBT PART***************************************************************************/
+
+/* A.2 Non Bill Adjust*/
+/*Here we have to sum all the Total Non Bills that were placed for each customer*/
+
+
+/*A.2.1 Create SME bill summary*/
+
+proc sql;
+CREATE TABLE NB_resume4_1
+AS
+SELECT SUM(NON_BIL) as Non_bil_adjust1
+FROM MERGE_NON;
+quit;
+
+/*********SUMMARY DEBT PART***************************************************************************/
+
+
+/*6.4 ADD THE NON BILLS TO THE COLUMN YEAR_6M*/
+DATA SMEAGEDDEBT;
+	SET MERGE_NON;
+	NUTEVA = SUM(Year_6M, NON_BIL);
+	DROP Year_6M;
+	DROP NON_BIL;
+	RENAME NUTEVA = Year_6M;
+RUN;
+
+
+/*6.5 ADD THE COLUMN GRAND_TOTAL*/
+DATA SMEAGEDDEBT;
+	SET SMEAGEDDEBT;
+	GRAN_TOTAL =	SUM(LESS_O_Days, FROM_O_TO_3O_Days, FROM_31_TO_6O_Days, FROM_61_TO_9O_Days, FROM_91_TO_12O_Days, FROM_121_TO_15O_Days, FROM_151_TO_18O_Days, FROM_181_TO_21O_Days, FROM_211_TO_24O_Days, FROM_241_TO_27O_Days, FROM_271_TO_3OO_Days, FROM_3O1_TO_33O_Days, FROM_331_TO_365_Days, Year_2, Year_3, Year_4, Year_5, Year_6, Year_6m
+);
+run;
+
+
+/*STEP 7: Split SME Aged debt table*/
+
+/*Obs: In the column names we will see the following abbreviations
+P = Debt (Possitive number)
+N = Credit (Negative number)
+AGR = Aggregate (the sum for one corp or for the same cust_ref)*/
+
+
+/*7.1 Adding the new individual columns*/
+PROC SQL;
+	CREATE TABLE V
+	AS
+	SELECT /*DISTINCT*/ *
+	/*DEBT - POSSITIVE PART*/
+	,CASE WHEN LESS_O_Days >= 0 THEN LESS_O_Days ELSE 0 END AS LESS_O_Days_P
+	,CASE WHEN FROM_O_TO_3O_Days >= 0 THEN FROM_O_TO_3O_Days ELSE 0 END AS FROM_O_TO_3O_Days_P
+	,CASE WHEN FROM_31_TO_6O_Days >= 0 THEN FROM_31_TO_6O_Days ELSE 0 END AS FROM_31_TO_6O_Days_P
+	,CASE WHEN FROM_61_TO_9O_Days >= 0 THEN FROM_61_TO_9O_Days ELSE 0 END AS FROM_61_TO_9O_Days_P
+	,CASE WHEN FROM_91_TO_12O_Days >= 0 THEN FROM_91_TO_12O_Days ELSE 0 END AS FROM_91_TO_12O_Days_P
+	,CASE WHEN FROM_121_TO_15O_Days >= 0 THEN FROM_121_TO_15O_Days ELSE 0 END AS FROM_121_TO_15O_Days_P
+	,CASE WHEN FROM_151_TO_18O_Days >= 0 THEN FROM_151_TO_18O_Days ELSE 0 END AS FROM_151_TO_18O_Days_P
+	,CASE WHEN FROM_181_TO_21O_Days >= 0 THEN FROM_181_TO_21O_Days ELSE 0 END AS FROM_181_TO_21O_Days_P
+	,CASE WHEN FROM_211_TO_24O_Days >= 0 THEN FROM_211_TO_24O_Days ELSE 0 END AS FROM_211_TO_24O_Days_P
+	,CASE WHEN FROM_241_TO_27O_Days >= 0 THEN FROM_241_TO_27O_Days ELSE 0 END AS FROM_241_TO_27O_Days_P
+	,CASE WHEN FROM_271_TO_3OO_Days >= 0 THEN FROM_271_TO_3OO_Days ELSE 0 END AS FROM_271_TO_3OO_Days_P
+	,CASE WHEN FROM_3O1_TO_33O_Days >= 0 THEN FROM_3O1_TO_33O_Days ELSE 0 END AS FROM_3O1_TO_33O_Days_P
+	,CASE WHEN FROM_331_TO_365_Days >= 0 THEN FROM_331_TO_365_Days ELSE 0 END AS FROM_331_TO_365_Days_P
+	,CASE WHEN Year_2 >= 0 THEN Year_2 ELSE 0 END AS Year_2_P
+	,CASE WHEN Year_3 >= 0 THEN Year_3 ELSE 0 END AS Year_3_P
+	,CASE WHEN Year_4 >= 0 THEN Year_4 ELSE 0 END AS Year_4_P
+	,CASE WHEN Year_5 >= 0 THEN Year_5 ELSE 0 END AS Year_5_P
+	,CASE WHEN Year_6 >= 0 THEN Year_6 ELSE 0 END AS Year_6_P
+	,CASE WHEN Year_6M >= 0 THEN Year_6M ELSE 0 END AS Year_6M_P
+
+	/*CREDIT - NEGATIVE PART*/
+	,CASE WHEN LESS_O_Days <= 0 THEN LESS_O_Days ELSE 0 END AS LESS_O_Days_N
+	,CASE WHEN FROM_O_TO_3O_Days <= 0 THEN FROM_O_TO_3O_Days ELSE 0 END AS FROM_O_TO_3O_Days_N
+	,CASE WHEN FROM_31_TO_6O_Days <= 0 THEN FROM_31_TO_6O_Days ELSE 0 END AS FROM_31_TO_6O_Days_N
+	,CASE WHEN FROM_61_TO_9O_Days <= 0 THEN FROM_61_TO_9O_Days ELSE 0 END AS FROM_61_TO_9O_Days_N
+	,CASE WHEN FROM_91_TO_12O_Days <= 0 THEN FROM_91_TO_12O_Days ELSE 0 END AS FROM_91_TO_12O_Days_N
+	,CASE WHEN FROM_121_TO_15O_Days <= 0 THEN FROM_121_TO_15O_Days ELSE 0 END AS FROM_121_TO_15O_Days_N
+	,CASE WHEN FROM_151_TO_18O_Days <= 0 THEN FROM_151_TO_18O_Days ELSE 0 END AS FROM_151_TO_18O_Days_N
+	,CASE WHEN FROM_181_TO_21O_Days <= 0 THEN FROM_181_TO_21O_Days ELSE 0 END AS FROM_181_TO_21O_Days_N
+	,CASE WHEN FROM_211_TO_24O_Days <= 0 THEN FROM_211_TO_24O_Days ELSE 0 END AS FROM_211_TO_24O_Days_N
+	,CASE WHEN FROM_241_TO_27O_Days <= 0 THEN FROM_241_TO_27O_Days ELSE 0 END AS FROM_241_TO_27O_Days_N
+	,CASE WHEN FROM_271_TO_3OO_Days <= 0 THEN FROM_271_TO_3OO_Days ELSE 0 END AS FROM_271_TO_3OO_Days_N
+	,CASE WHEN FROM_3O1_TO_33O_Days <= 0 THEN FROM_3O1_TO_33O_Days ELSE 0 END AS FROM_3O1_TO_33O_Days_N
+	,CASE WHEN FROM_331_TO_365_Days <= 0 THEN FROM_331_TO_365_Days ELSE 0 END AS FROM_331_TO_365_Days_N
+	,CASE WHEN Year_2 <= 0 THEN Year_2 ELSE 0 END AS Year_2_N
+	,CASE WHEN Year_3 <= 0 THEN Year_3 ELSE 0 END AS Year_3_N
+	,CASE WHEN Year_4 <= 0 THEN Year_4 ELSE 0 END AS Year_4_N
+	,CASE WHEN Year_5 <= 0 THEN Year_5 ELSE 0 END AS Year_5_N
+	,CASE WHEN Year_6 <= 0 THEN Year_6 ELSE 0 END AS Year_6_N
+	,CASE WHEN Year_6M <= 0 THEN Year_6M ELSE 0 END AS Year_6M_N
+
+	FROM SMEAGEDDEBT;
+QUIT;
+
+/*7.2 CREATE CKECKING COLUMNS*/
+DATA V;
+	SET V;
+	DEBT = SUM(of LESS_O_Days_P	FROM_O_TO_3O_Days_P	FROM_31_TO_6O_Days_P	FROM_61_TO_9O_Days_P	FROM_91_TO_12O_Days_P	FROM_121_TO_15O_Days_P	FROM_151_TO_18O_Days_P	FROM_181_TO_21O_Days_P	FROM_211_TO_24O_Days_P	FROM_241_TO_27O_Days_P	FROM_271_TO_3OO_Days_P	FROM_3O1_TO_33O_Days_P	FROM_331_TO_365_Days_P	Year_2_P	Year_3_P	Year_4_P	Year_5_P	Year_6_P	Year_6M_P
+	);
+	CREDIT = SUM(of LESS_O_Days_N	FROM_O_TO_3O_Days_N	FROM_31_TO_6O_Days_N	FROM_61_TO_9O_Days_N	FROM_91_TO_12O_Days_N	FROM_121_TO_15O_Days_N	FROM_151_TO_18O_Days_N	FROM_181_TO_21O_Days_N	FROM_211_TO_24O_Days_N	FROM_241_TO_27O_Days_N	FROM_271_TO_3OO_Days_N	FROM_3O1_TO_33O_Days_N	FROM_331_TO_365_Days_N	Year_2_N	Year_3_N	Year_4_N	Year_5_N	Year_6_N	Year_6M_N
+	);
+	CHECK = SUM(SUM(DEBT, CREDIT),-GRAN_TOTAL);
+run;
+
+/*7.3 CREATE THE AGREGGATED PART*/
+DATA W;
+	SET V;
+
+	/*PART POSSITIVE- AGREGGATED*/
+	LESS_O_Days_P_AGR = input(0, Best12.) ;
+	FROM_O_TO_3O_Days_P_AGR = input(0, Best12.) ;
+	FROM_31_TO_6O_Days_P_AGR = input(0, Best12.) ;
+	FROM_61_TO_9O_Days_P_AGR = input(0, Best12.) ;
+	FROM_91_TO_12O_Days_P_AGR = input(0, Best12.) ;
+	FROM_121_TO_15O_Days_P_AGR = input(0, Best12.) ;
+	FROM_151_TO_18O_Days_P_AGR = input(0, Best12.) ;
+	FROM_181_TO_21O_Days_P_AGR = input(0, Best12.) ;
+	FROM_211_TO_24O_Days_P_AGR = input(0, Best12.) ;
+	FROM_241_TO_27O_Days_P_AGR = input(0, Best12.) ;
+	FROM_271_TO_3OO_Days_P_AGR = input(0, Best12.) ;
+	FROM_3O1_TO_33O_Days_P_AGR = input(0, Best12.) ;
+	FROM_331_TO_365_Days_P_AGR = input(0, Best12.) ;
+	Year_2_P_AGR = input(0, Best12.) ;
+	Year_3_P_AGR = input(0, Best12.) ;
+	Year_4_P_AGR = input(0, Best12.) ;
+	Year_5_P_AGR = input(0, Best12.) ;
+	Year_6_P_AGR = input(0, Best12.) ;
+	Year_6M_P_AGR = input(0, Best12.) ;
+
+	/*PART NEGATIVE - AGREGGATED*/
+	LESS_O_Days_N_AGR = input(0, Best12.) ;
+	FROM_O_TO_3O_Days_N_AGR = input(0, Best12.) ;
+	FROM_31_TO_6O_Days_N_AGR = input(0, Best12.) ;
+	FROM_61_TO_9O_Days_N_AGR = input(0, Best12.) ;
+	FROM_91_TO_12O_Days_N_AGR = input(0, Best12.) ;
+	FROM_121_TO_15O_Days_N_AGR = input(0, Best12.) ;
+	FROM_151_TO_18O_Days_N_AGR = input(0, Best12.) ;
+	FROM_181_TO_21O_Days_N_AGR = input(0, Best12.) ;
+	FROM_211_TO_24O_Days_N_AGR = input(0, Best12.) ;
+	FROM_241_TO_27O_Days_N_AGR = input(0, Best12.) ;
+	FROM_271_TO_3OO_Days_N_AGR = input(0, Best12.) ;
+	FROM_3O1_TO_33O_Days_N_AGR = input(0, Best12.) ;
+	FROM_331_TO_365_Days_N_AGR = input(0, Best12.) ;
+	Year_2_N_AGR = input(0, Best12.) ;
+	Year_3_N_AGR = input(0, Best12.) ;
+	Year_4_N_AGR = input(0, Best12.) ;
+	Year_5_N_AGR = input(0, Best12.) ;
+	Year_6_N_AGR = input(0, Best12.) ;
+	Year_6M_N_AGR = input(0, Best12.) ;
+run;
+
+/*7.4 SETTING FORMULAS FOR THE AGGREGATED PART*/
+DATA W;
+	SET W;
+	/*Obs: we need to fill the columns back to front*/
+	IF CREDIT + Year_6M_P > 0 THEN Year_6M_P_AGR = CREDIT + Year_6M_P; ELSE Year_6M_P_AGR =0;
+	Year_6M_N_AGR = Year_6M_P - Year_6M_P_AGR + CREDIT;
+	IF Year_6M_N_AGR + Year_6_P > 0 THEN Year_6_P_AGR = Year_6M_N_AGR + Year_6_P; ELSE Year_6_P_AGR =0;
+	Year_6_N_AGR = Year_6_P - Year_6_P_AGR + Year_6M_N_AGR ;
+	IF Year_6_N_AGR + Year_5_P > 0 THEN Year_5_P_AGR = Year_6_N_AGR + Year_5_P; ELSE Year_5_P_AGR =0;
+	Year_5_N_AGR = Year_5_P - Year_5_P_AGR + Year_6_N_AGR ;
+	IF Year_5_N_AGR + Year_4_P > 0 THEN Year_4_P_AGR = Year_5_N_AGR + Year_4_P; ELSE Year_4_P_AGR =0;
+	Year_4_N_AGR = Year_4_P - Year_4_P_AGR + Year_5_N_AGR ;
+	IF Year_4_N_AGR + Year_3_P > 0 THEN Year_3_P_AGR = Year_4_N_AGR + Year_3_P; ELSE Year_3_P_AGR =0;
+	Year_3_N_AGR = Year_3_P - Year_3_P_AGR + Year_4_N_AGR ;
+	IF Year_3_N_AGR + Year_2_P > 0 THEN Year_2_P_AGR = Year_3_N_AGR + Year_2_P; ELSE Year_2_P_AGR =0;
+	Year_2_N_AGR = Year_2_P - Year_2_P_AGR + Year_3_N_AGR ;
+	IF Year_2_N_AGR + FROM_331_TO_365_Days_P > 0 THEN FROM_331_TO_365_Days_P_AGR = Year_2_N_AGR + FROM_331_TO_365_Days_P; ELSE FROM_331_TO_365_Days_P_AGR =0;
+	FROM_331_TO_365_Days_N_AGR = FROM_331_TO_365_Days_P - FROM_331_TO_365_Days_P_AGR + Year_2_N_AGR ;
+	IF FROM_331_TO_365_Days_N_AGR + FROM_3O1_TO_33O_Days_P > 0 THEN FROM_3O1_TO_33O_Days_P_AGR = FROM_331_TO_365_Days_N_AGR + FROM_3O1_TO_33O_Days_P; ELSE FROM_3O1_TO_33O_Days_P_AGR =0;
+	FROM_3O1_TO_33O_Days_N_AGR = FROM_3O1_TO_33O_Days_P - FROM_3O1_TO_33O_Days_P_AGR + FROM_331_TO_365_Days_N_AGR ;
+	IF FROM_3O1_TO_33O_Days_N_AGR + FROM_271_TO_3OO_Days_P > 0 THEN FROM_271_TO_3OO_Days_P_AGR = FROM_3O1_TO_33O_Days_N_AGR + FROM_271_TO_3OO_Days_P; ELSE FROM_271_TO_3OO_Days_P_AGR =0;
+	FROM_271_TO_3OO_Days_N_AGR = FROM_271_TO_3OO_Days_P - FROM_271_TO_3OO_Days_P_AGR + FROM_3O1_TO_33O_Days_N_AGR ;
+	IF FROM_271_TO_3OO_Days_N_AGR + FROM_241_TO_27O_Days_P > 0 THEN FROM_241_TO_27O_Days_P_AGR = FROM_271_TO_3OO_Days_N_AGR + FROM_241_TO_27O_Days_P; ELSE FROM_241_TO_27O_Days_P_AGR =0;
+	FROM_241_TO_27O_Days_N_AGR = FROM_241_TO_27O_Days_P - FROM_241_TO_27O_Days_P_AGR + FROM_271_TO_3OO_Days_N_AGR ;
+	IF FROM_241_TO_27O_Days_N_AGR + FROM_211_TO_24O_Days_P > 0 THEN FROM_211_TO_24O_Days_P_AGR = FROM_241_TO_27O_Days_N_AGR + FROM_211_TO_24O_Days_P; ELSE FROM_211_TO_24O_Days_P_AGR =0;
+	FROM_211_TO_24O_Days_N_AGR = FROM_211_TO_24O_Days_P - FROM_211_TO_24O_Days_P_AGR + FROM_241_TO_27O_Days_N_AGR ;
+	IF FROM_211_TO_24O_Days_N_AGR + FROM_181_TO_21O_Days_P > 0 THEN FROM_181_TO_21O_Days_P_AGR = FROM_211_TO_24O_Days_N_AGR + FROM_181_TO_21O_Days_P; ELSE FROM_181_TO_21O_Days_P_AGR =0;
+	FROM_181_TO_21O_Days_N_AGR = FROM_181_TO_21O_Days_P - FROM_181_TO_21O_Days_P_AGR + FROM_211_TO_24O_Days_N_AGR ;
+	IF FROM_181_TO_21O_Days_N_AGR + FROM_151_TO_18O_Days_P > 0 THEN FROM_151_TO_18O_Days_P_AGR = FROM_181_TO_21O_Days_N_AGR + FROM_151_TO_18O_Days_P; ELSE FROM_151_TO_18O_Days_P_AGR =0;
+	FROM_151_TO_18O_Days_N_AGR = FROM_151_TO_18O_Days_P - FROM_151_TO_18O_Days_P_AGR + FROM_181_TO_21O_Days_N_AGR ;
+	IF FROM_151_TO_18O_Days_N_AGR + FROM_121_TO_15O_Days_P > 0 THEN FROM_121_TO_15O_Days_P_AGR = FROM_151_TO_18O_Days_N_AGR + FROM_121_TO_15O_Days_P; ELSE FROM_121_TO_15O_Days_P_AGR =0;
+	FROM_121_TO_15O_Days_N_AGR = FROM_121_TO_15O_Days_P - FROM_121_TO_15O_Days_P_AGR + FROM_151_TO_18O_Days_N_AGR ;
+	IF FROM_121_TO_15O_Days_N_AGR + FROM_91_TO_12O_Days_P > 0 THEN FROM_91_TO_12O_Days_P_AGR = FROM_121_TO_15O_Days_N_AGR + FROM_91_TO_12O_Days_P; ELSE FROM_91_TO_12O_Days_P_AGR =0;
+	FROM_91_TO_12O_Days_N_AGR = FROM_91_TO_12O_Days_P - FROM_91_TO_12O_Days_P_AGR + FROM_121_TO_15O_Days_N_AGR ;
+	IF FROM_91_TO_12O_Days_N_AGR + FROM_61_TO_9O_Days_P > 0 THEN FROM_61_TO_9O_Days_P_AGR = FROM_91_TO_12O_Days_N_AGR + FROM_61_TO_9O_Days_P; ELSE FROM_61_TO_9O_Days_P_AGR =0;
+	FROM_61_TO_9O_Days_N_AGR = FROM_61_TO_9O_Days_P - FROM_61_TO_9O_Days_P_AGR + FROM_91_TO_12O_Days_N_AGR ;
+	IF FROM_61_TO_9O_Days_N_AGR + FROM_31_TO_6O_Days_P > 0 THEN FROM_31_TO_6O_Days_P_AGR = FROM_61_TO_9O_Days_N_AGR + FROM_31_TO_6O_Days_P; ELSE FROM_31_TO_6O_Days_P_AGR =0;
+	FROM_31_TO_6O_Days_N_AGR = FROM_31_TO_6O_Days_P - FROM_31_TO_6O_Days_P_AGR + FROM_61_TO_9O_Days_N_AGR ;
+	IF FROM_31_TO_6O_Days_N_AGR + FROM_O_TO_3O_Days_P > 0 THEN FROM_O_TO_3O_Days_P_AGR = FROM_31_TO_6O_Days_N_AGR + FROM_O_TO_3O_Days_P; ELSE FROM_O_TO_3O_Days_P_AGR =0;
+	FROM_O_TO_3O_Days_N_AGR = FROM_O_TO_3O_Days_P - FROM_O_TO_3O_Days_P_AGR + FROM_31_TO_6O_Days_N_AGR ;
+	IF FROM_O_TO_3O_Days_N_AGR + LESS_O_Days_P > 0 THEN LESS_O_Days_P_AGR = FROM_O_TO_3O_Days_N_AGR + LESS_O_Days_P; ELSE LESS_O_Days_P_AGR =0;
+	LESS_O_Days_N_AGR = LESS_O_Days_P - LESS_O_Days_P_AGR + FROM_O_TO_3O_Days_N_AGR ;
+
+RUN;
+
+/*7.5 Update the SME Aged debt table with this new info*/
+DATA SMEAGEDDEBT;
+	SET W;
+RUN;
+
+
+/*************************TO THE AUDIT PART********************************/
+
+/*I MUST CREATE A NEW TABLE WITH THE CORRECT CHECK BETWEEN DEBT AND CREDIT*/
+
+/*7.6 FILL CKECKING COLUMN*/
+DATA SMEAGEDDEBT;
+	SET SMEAGEDDEBT;
+
+CHECK = SUM(SUM(DEBT, CREDIT),-SUM(LESS_O_Days_P_AGR, FROM_O_TO_3O_Days_P_AGR, FROM_31_TO_6O_Days_P_AGR, FROM_61_TO_9O_Days_P_AGR, FROM_91_TO_12O_Days_P_AGR, FROM_121_TO_15O_Days_P_AGR, FROM_151_TO_18O_Days_P_AGR, FROM_181_TO_21O_Days_P_AGR, FROM_211_TO_24O_Days_P_AGR, FROM_241_TO_27O_Days_P_AGR, FROM_271_TO_3OO_Days_P_AGR, FROM_3O1_TO_33O_Days_P_AGR, FROM_331_TO_365_Days_P_AGR, Year_2_P_AGR, Year_3_P_AGR, Year_4_P_AGR, Year_5_P_AGR, Year_6_P_AGR, Year_6M_P_AGR
+));
+run;
+
+
+
+/*A.3.2 We continue creating the SME debt credit summary*/
+proc sql;
+CREATE TABLE Credit_resume4_2
+AS
+SELECT SUM(CHECK) as Plus_credit_cust2
+FROM  smeageddebt as B;
+quit;
+
+/*************************TO THE AUDIT PART********************************/
+
+/*STEP 8: Create NON CORPORATE GROUP AGED DEBT TABLE*/
+
+/*8.1 Create the corp group aged debt table*/
+
+
+PROC SQL;
+	CREATE TABLE CGAGEDDEBT
+	AS
+	SELECT DISTINCT A.*
+	FROM CORPACOUNTS AS A, Groupe AS B
+	WHERE A.cust_ref = B.Row_labels
+	ORDER BY ID;
+QUIT;
+
+
+/*8.2 Create the NON corp group aged debt table*/
+PROC SQL;
+	CREATE TABLE NCGAGEDDEBT
+	AS
+	SELECT DISTINCT A.*
+	FROM CORPACOUNTS AS A LEFT JOIN CGAGEDDEBT AS B
+	ON A.ID = B.ID
+	WHERE B.ID IS NULL
+	ORDER BY ID;
+QUIT;
+
+/*8.3 REMOVE THE AUXILIAR ID*/
+DATA CGAGEDDEBT;
+	SET CGAGEDDEBT;
+	DROP ID;
+RUN;
+
+DATA NCGAGEDDEBT;
+	SET NCGAGEDDEBT;
+	DROP ID;
+RUN;
+
+/*STEP 9: Split the NON CORP GROUP Aged debt*/
+
+/*9.1 Add new rows that allows to cut off the first copied row from the future pivot table to make
+and ensure that we are considering all the aged_debt intervals*/
+PROC SQL;
+	INSERT INTO NCGAGEDDEBT VALUES ('AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'000 Days',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES ('AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'000-030 Days',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'031-060 Days',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES (	'AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'061-090 Days',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'091-120 Days',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES (	'AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'121-150 Days',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'151-180 Days',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES (	'AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'181-210 Days',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'211-240 Days',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES (	'AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'241-270 Days',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'271-300 Days',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES (	'AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'301-330 Days',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'331-365 Days',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES (	'AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 2',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 3',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES (	'AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 4',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 5',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES (	'AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 6',	4
+	);
+	INSERT INTO NCGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 6+',	4
+	);
+QUIT;
+
+/*9.2 Use proc tabulate to create a pivot table adding up the total_bar_clear column in each Aged_Band
+for every cust_ref*/
+ods excel file = "C:/Users/FranciscoM/Desktop/SAMPLE.xlsx"; 
+proc tabulate
+	data = NCGAGEDDEBT;
+	class AGED_BANDS cust_ref;
+	var total_bal_clear;
+	tables cust_ref, AGED_BANDS*total_bal_clear*(sum);
+run;
+ods excel close;
+
+/*9.3 Import the pivot table to SAS*/
+PROC IMPORT DATAFILE = "C:/Users/FranciscoM/Desktop/SAMPLE.xlsx"
+	OUT = WORK.NCGAGEDDEBT2
+	DBMS = XLSX
+	REPLACE;
+	GETNAMES = NO;
+	DATAROW = 7;
+RUN;
+
+/*9.4 ADD ALL NEW COLUMNS IN A PROPER FORMAT*/
+DATA NCGAGEDDEBT2;
+	SET NCGAGEDDEBT2;
+	cust_ref = A;
+	LESS_O_Days= input (B , best12.);
+	FROM_O_TO_3O_Days= input (C , best12.);
+	FROM_31_TO_6O_Days= input (D , best12.);
+	FROM_61_TO_9O_Days= input (E , best12.);
+	FROM_91_TO_12O_Days= input (F , best12.);
+	FROM_121_TO_15O_Days= input (G , best12.);
+	FROM_151_TO_18O_Days= input (H , best12.);
+	FROM_181_TO_21O_Days= input (I , best12.);
+	FROM_211_TO_24O_Days= input (J , best12.);
+	FROM_241_TO_27O_Days= input (K , best12.);
+	FROM_271_TO_3OO_Days= input (L , best12.);
+	FROM_3O1_TO_33O_Days= input (M , best12.);
+	FROM_331_TO_365_Days= input (N , best12.);
+	Year_2= input (O , best12.);
+	Year_3= input (P , best12.);
+	Year_4= input (Q , best12.);
+	Year_5= input (R , best12.);
+	Year_6= input (S , best12.);
+	Year_6M= input (T , best12.);
+
+	DROP A;
+	DROP B;
+	DROP C;
+	DROP D;
+	DROP E;
+	DROP F;
+	DROP G;
+	DROP H;
+	DROP I;
+	DROP J;
+	DROP K;
+	DROP L;
+	DROP M;
+	DROP N;
+	DROP O;
+	DROP P;
+	DROP Q;
+	DROP R;
+	DROP S;
+	DROP T;
+
+RUN;
+
+/*9.5 here we change the name of the column to merge tables in the next step*/
+DATA new;
+	set Nonbills;
+	cust_ref = Customer;
+	DROP Customer;
+run;
+
+/*Obs: this is a left merge in SAS directly and easy*/
+/*9.6 SET THE NON CORP GROUP TABLE WITH THE CORRECT COLUMNS*/
+DATA MERGE_NON;
+	MERGE NCGAGEDDEBT2 (IN = A) NEW (IN = B);
+	BY cust_ref;
+	IF A;
+RUN;
+
+
+/*********SUMMARY DEBT PART***************************************************************************/
+
+/* A.2.2 Non Bill Adjust*/
+/*Here we have to sum all the Total Non Bills that were placed for each customer*/
+
+
+/*We will start creating the NonCorp Non Bill summary*/
+
+proc sql;
+CREATE TABLE NB_resume4_2
+AS
+SELECT SUM(NON_BIL) as Non_bil_adjust2
+FROM MERGE_NON;
+quit;
+
+/*********SUMMARY DEBT PART***************************************************************************/
+
+
+/*9.7 ADD THE COLUMN GRAN_TOTAL*/
+DATA NCGAGEDDEBT2;
+	SET MERGE_NON;
+	NUTEVA = SUM(Year_6M, NON_BIL);
+	DROP Year_6M NON_BIL;
+	RENAME NUTEVA = Year_6M;
+	GRAN_TOTAL = SUM(of LESS_O_Days	FROM_O_TO_3O_Days	FROM_31_TO_6O_Days	FROM_61_TO_9O_Days	FROM_91_TO_12O_Days	FROM_121_TO_15O_Days	FROM_151_TO_18O_Days	FROM_181_TO_21O_Days	FROM_211_TO_24O_Days	FROM_241_TO_27O_Days	FROM_271_TO_3OO_Days	FROM_3O1_TO_33O_Days	FROM_331_TO_365_Days	Year_2	Year_3	Year_4	Year_5	Year_6	Year_6M
+	);
+RUN;
+
+
+
+/*9.8 Adding the new individual columns*/
+PROC SQL;
+	CREATE TABLE V
+	AS
+	SELECT DISTINCT *
+	/*DEBT - POSSITIVE PART*/
+	,CASE WHEN LESS_O_Days >= 0 THEN LESS_O_Days ELSE 0 END AS LESS_O_Days_P
+	,CASE WHEN FROM_O_TO_3O_Days >= 0 THEN FROM_O_TO_3O_Days ELSE 0 END AS FROM_O_TO_3O_Days_P
+	,CASE WHEN FROM_31_TO_6O_Days >= 0 THEN FROM_31_TO_6O_Days ELSE 0 END AS FROM_31_TO_6O_Days_P
+	,CASE WHEN FROM_61_TO_9O_Days >= 0 THEN FROM_61_TO_9O_Days ELSE 0 END AS FROM_61_TO_9O_Days_P
+	,CASE WHEN FROM_91_TO_12O_Days >= 0 THEN FROM_91_TO_12O_Days ELSE 0 END AS FROM_91_TO_12O_Days_P
+	,CASE WHEN FROM_121_TO_15O_Days >= 0 THEN FROM_121_TO_15O_Days ELSE 0 END AS FROM_121_TO_15O_Days_P
+	,CASE WHEN FROM_151_TO_18O_Days >= 0 THEN FROM_151_TO_18O_Days ELSE 0 END AS FROM_151_TO_18O_Days_P
+	,CASE WHEN FROM_181_TO_21O_Days >= 0 THEN FROM_181_TO_21O_Days ELSE 0 END AS FROM_181_TO_21O_Days_P
+	,CASE WHEN FROM_211_TO_24O_Days >= 0 THEN FROM_211_TO_24O_Days ELSE 0 END AS FROM_211_TO_24O_Days_P
+	,CASE WHEN FROM_241_TO_27O_Days >= 0 THEN FROM_241_TO_27O_Days ELSE 0 END AS FROM_241_TO_27O_Days_P
+	,CASE WHEN FROM_271_TO_3OO_Days >= 0 THEN FROM_271_TO_3OO_Days ELSE 0 END AS FROM_271_TO_3OO_Days_P
+	,CASE WHEN FROM_3O1_TO_33O_Days >= 0 THEN FROM_3O1_TO_33O_Days ELSE 0 END AS FROM_3O1_TO_33O_Days_P
+	,CASE WHEN FROM_331_TO_365_Days >= 0 THEN FROM_331_TO_365_Days ELSE 0 END AS FROM_331_TO_365_Days_P
+	,CASE WHEN Year_2 >= 0 THEN Year_2 ELSE 0 END AS Year_2_P
+	,CASE WHEN Year_3 >= 0 THEN Year_3 ELSE 0 END AS Year_3_P
+	,CASE WHEN Year_4 >= 0 THEN Year_4 ELSE 0 END AS Year_4_P
+	,CASE WHEN Year_5 >= 0 THEN Year_5 ELSE 0 END AS Year_5_P
+	,CASE WHEN Year_6 >= 0 THEN Year_6 ELSE 0 END AS Year_6_P
+	,CASE WHEN Year_6M >= 0 THEN Year_6M ELSE 0 END AS Year_6M_P
+
+	/* CREDIT - NEGATIVE PART*/
+	,CASE WHEN LESS_O_Days <= 0 THEN LESS_O_Days ELSE 0 END AS LESS_O_Days_N
+	,CASE WHEN FROM_O_TO_3O_Days <= 0 THEN FROM_O_TO_3O_Days ELSE 0 END AS FROM_O_TO_3O_Days_N
+	,CASE WHEN FROM_31_TO_6O_Days <= 0 THEN FROM_31_TO_6O_Days ELSE 0 END AS FROM_31_TO_6O_Days_N
+	,CASE WHEN FROM_61_TO_9O_Days <= 0 THEN FROM_61_TO_9O_Days ELSE 0 END AS FROM_61_TO_9O_Days_N
+	,CASE WHEN FROM_91_TO_12O_Days <= 0 THEN FROM_91_TO_12O_Days ELSE 0 END AS FROM_91_TO_12O_Days_N
+	,CASE WHEN FROM_121_TO_15O_Days <= 0 THEN FROM_121_TO_15O_Days ELSE 0 END AS FROM_121_TO_15O_Days_N
+	,CASE WHEN FROM_151_TO_18O_Days <= 0 THEN FROM_151_TO_18O_Days ELSE 0 END AS FROM_151_TO_18O_Days_N
+	,CASE WHEN FROM_181_TO_21O_Days <= 0 THEN FROM_181_TO_21O_Days ELSE 0 END AS FROM_181_TO_21O_Days_N
+	,CASE WHEN FROM_211_TO_24O_Days <= 0 THEN FROM_211_TO_24O_Days ELSE 0 END AS FROM_211_TO_24O_Days_N
+	,CASE WHEN FROM_241_TO_27O_Days <= 0 THEN FROM_241_TO_27O_Days ELSE 0 END AS FROM_241_TO_27O_Days_N
+	,CASE WHEN FROM_271_TO_3OO_Days <= 0 THEN FROM_271_TO_3OO_Days ELSE 0 END AS FROM_271_TO_3OO_Days_N
+	,CASE WHEN FROM_3O1_TO_33O_Days <= 0 THEN FROM_3O1_TO_33O_Days ELSE 0 END AS FROM_3O1_TO_33O_Days_N
+	,CASE WHEN FROM_331_TO_365_Days <= 0 THEN FROM_331_TO_365_Days ELSE 0 END AS FROM_331_TO_365_Days_N
+	,CASE WHEN Year_2 <= 0 THEN Year_2 ELSE 0 END AS Year_2_N
+	,CASE WHEN Year_3 <= 0 THEN Year_3 ELSE 0 END AS Year_3_N
+	,CASE WHEN Year_4 <= 0 THEN Year_4 ELSE 0 END AS Year_4_N
+	,CASE WHEN Year_5 <= 0 THEN Year_5 ELSE 0 END AS Year_5_N
+	,CASE WHEN Year_6 <= 0 THEN Year_6 ELSE 0 END AS Year_6_N
+	,CASE WHEN Year_6M <= 0 THEN Year_6M ELSE 0 END AS Year_6M_N
+
+FROM NCGAGEDDEBT2;
+QUIT;
+
+/*9.9 ADD THE CKECKING COLUMNS*/
+DATA V;
+	SET V;
+	DEBT = SUM(of LESS_O_Days_P	FROM_O_TO_3O_Days_P	FROM_31_TO_6O_Days_P	FROM_61_TO_9O_Days_P	FROM_91_TO_12O_Days_P	FROM_121_TO_15O_Days_P	FROM_151_TO_18O_Days_P	FROM_181_TO_21O_Days_P	FROM_211_TO_24O_Days_P	FROM_241_TO_27O_Days_P	FROM_271_TO_3OO_Days_P	FROM_3O1_TO_33O_Days_P	FROM_331_TO_365_Days_P	Year_2_P	Year_3_P	Year_4_P	Year_5_P	Year_6_P	Year_6M_P
+	);
+	CREDIT = SUM(of LESS_O_Days_N	FROM_O_TO_3O_Days_N	FROM_31_TO_6O_Days_N	FROM_61_TO_9O_Days_N	FROM_91_TO_12O_Days_N	FROM_121_TO_15O_Days_N	FROM_151_TO_18O_Days_N	FROM_181_TO_21O_Days_N	FROM_211_TO_24O_Days_N	FROM_241_TO_27O_Days_N	FROM_271_TO_3OO_Days_N	FROM_3O1_TO_33O_Days_N	FROM_331_TO_365_Days_N	Year_2_N	Year_3_N	Year_4_N	Year_5_N	Year_6_N	Year_6M_N
+	);
+	CHECK = SUM(SUM(DEBT, CREDIT),-GRAN_TOTAL);
+run;
+
+/*9.10 CREATE THE AGREGGATED PART*/
+DATA W;
+	SET V;
+	/*PART POSSITIVE- AGREGGATED*/
+	LESS_O_Days_P_AGR = input(0, Best12.) ;
+	FROM_O_TO_3O_Days_P_AGR = input(0, Best12.) ;
+	FROM_31_TO_6O_Days_P_AGR = input(0, Best12.) ;
+	FROM_61_TO_9O_Days_P_AGR = input(0, Best12.) ;
+	FROM_91_TO_12O_Days_P_AGR = input(0, Best12.) ;
+	FROM_121_TO_15O_Days_P_AGR = input(0, Best12.) ;
+	FROM_151_TO_18O_Days_P_AGR = input(0, Best12.) ;
+	FROM_181_TO_21O_Days_P_AGR = input(0, Best12.) ;
+	FROM_211_TO_24O_Days_P_AGR = input(0, Best12.) ;
+	FROM_241_TO_27O_Days_P_AGR = input(0, Best12.) ;
+	FROM_271_TO_3OO_Days_P_AGR = input(0, Best12.) ;
+	FROM_3O1_TO_33O_Days_P_AGR = input(0, Best12.) ;
+	FROM_331_TO_365_Days_P_AGR = input(0, Best12.) ;
+	Year_2_P_AGR = input(0, Best12.) ;
+	Year_3_P_AGR = input(0, Best12.) ;
+	Year_4_P_AGR = input(0, Best12.) ;
+	Year_5_P_AGR = input(0, Best12.) ;
+	Year_6_P_AGR = input(0, Best12.) ;
+	Year_6M_P_AGR = input(0, Best12.) ;
+
+	/*PART NEGATIVE - AGREGGATED*/
+	LESS_O_Days_N_AGR = input(0, Best12.) ;
+	FROM_O_TO_3O_Days_N_AGR = input(0, Best12.) ;
+	FROM_31_TO_6O_Days_N_AGR = input(0, Best12.) ;
+	FROM_61_TO_9O_Days_N_AGR = input(0, Best12.) ;
+	FROM_91_TO_12O_Days_N_AGR = input(0, Best12.) ;
+	FROM_121_TO_15O_Days_N_AGR = input(0, Best12.) ;
+	FROM_151_TO_18O_Days_N_AGR = input(0, Best12.) ;
+	FROM_181_TO_21O_Days_N_AGR = input(0, Best12.) ;
+	FROM_211_TO_24O_Days_N_AGR = input(0, Best12.) ;
+	FROM_241_TO_27O_Days_N_AGR = input(0, Best12.) ;
+	FROM_271_TO_3OO_Days_N_AGR = input(0, Best12.) ;
+	FROM_3O1_TO_33O_Days_N_AGR = input(0, Best12.) ;
+	FROM_331_TO_365_Days_N_AGR = input(0, Best12.) ;
+	Year_2_N_AGR = input(0, Best12.) ;
+	Year_3_N_AGR = input(0, Best12.) ;
+	Year_4_N_AGR = input(0, Best12.) ;
+	Year_5_N_AGR = input(0, Best12.) ;
+	Year_6_N_AGR = input(0, Best12.) ;
+	Year_6M_N_AGR = input(0, Best12.) ;
+run;
+
+/*9.11 ADD THE FORMULAS FOR THE AGGREGATED PART*/
+DATA W;
+	SET W;
+	IF CREDIT + Year_6M_P > 0 THEN Year_6M_P_AGR = CREDIT + Year_6M_P; ELSE Year_6M_P_AGR =0;
+	Year_6M_N_AGR = Year_6M_P - Year_6M_P_AGR + CREDIT;
+	IF Year_6M_N_AGR + Year_6_P > 0 THEN Year_6_P_AGR = Year_6M_N_AGR + Year_6_P; ELSE Year_6_P_AGR =0;
+	Year_6_N_AGR = Year_6_P - Year_6_P_AGR + Year_6M_N_AGR ;
+	IF Year_6_N_AGR + Year_5_P > 0 THEN Year_5_P_AGR = Year_6_N_AGR + Year_5_P; ELSE Year_5_P_AGR =0;
+	Year_5_N_AGR = Year_5_P - Year_5_P_AGR + Year_6_N_AGR ;
+	IF Year_5_N_AGR + Year_4_P > 0 THEN Year_4_P_AGR = Year_5_N_AGR + Year_4_P; ELSE Year_4_P_AGR =0;
+	Year_4_N_AGR = Year_4_P - Year_4_P_AGR + Year_5_N_AGR ;
+	IF Year_4_N_AGR + Year_3_P > 0 THEN Year_3_P_AGR = Year_4_N_AGR + Year_3_P; ELSE Year_3_P_AGR =0;
+	Year_3_N_AGR = Year_3_P - Year_3_P_AGR + Year_4_N_AGR ;
+	IF Year_3_N_AGR + Year_2_P > 0 THEN Year_2_P_AGR = Year_3_N_AGR + Year_2_P; ELSE Year_2_P_AGR =0;
+	Year_2_N_AGR = Year_2_P - Year_2_P_AGR + Year_3_N_AGR ;
+	IF Year_2_N_AGR + FROM_331_TO_365_Days_P > 0 THEN FROM_331_TO_365_Days_P_AGR = Year_2_N_AGR + FROM_331_TO_365_Days_P; ELSE FROM_331_TO_365_Days_P_AGR =0;
+	FROM_331_TO_365_Days_N_AGR = FROM_331_TO_365_Days_P - FROM_331_TO_365_Days_P_AGR + Year_2_N_AGR ;
+	IF FROM_331_TO_365_Days_N_AGR + FROM_3O1_TO_33O_Days_P > 0 THEN FROM_3O1_TO_33O_Days_P_AGR = FROM_331_TO_365_Days_N_AGR + FROM_3O1_TO_33O_Days_P; ELSE FROM_3O1_TO_33O_Days_P_AGR =0;
+	FROM_3O1_TO_33O_Days_N_AGR = FROM_3O1_TO_33O_Days_P - FROM_3O1_TO_33O_Days_P_AGR + FROM_331_TO_365_Days_N_AGR ;
+	IF FROM_3O1_TO_33O_Days_N_AGR + FROM_271_TO_3OO_Days_P > 0 THEN FROM_271_TO_3OO_Days_P_AGR = FROM_3O1_TO_33O_Days_N_AGR + FROM_271_TO_3OO_Days_P; ELSE FROM_271_TO_3OO_Days_P_AGR =0;
+	FROM_271_TO_3OO_Days_N_AGR = FROM_271_TO_3OO_Days_P - FROM_271_TO_3OO_Days_P_AGR + FROM_3O1_TO_33O_Days_N_AGR ;
+	IF FROM_271_TO_3OO_Days_N_AGR + FROM_241_TO_27O_Days_P > 0 THEN FROM_241_TO_27O_Days_P_AGR = FROM_271_TO_3OO_Days_N_AGR + FROM_241_TO_27O_Days_P; ELSE FROM_241_TO_27O_Days_P_AGR =0;
+	FROM_241_TO_27O_Days_N_AGR = FROM_241_TO_27O_Days_P - FROM_241_TO_27O_Days_P_AGR + FROM_271_TO_3OO_Days_N_AGR ;
+	IF FROM_241_TO_27O_Days_N_AGR + FROM_211_TO_24O_Days_P > 0 THEN FROM_211_TO_24O_Days_P_AGR = FROM_241_TO_27O_Days_N_AGR + FROM_211_TO_24O_Days_P; ELSE FROM_211_TO_24O_Days_P_AGR =0;
+	FROM_211_TO_24O_Days_N_AGR = FROM_211_TO_24O_Days_P - FROM_211_TO_24O_Days_P_AGR + FROM_241_TO_27O_Days_N_AGR ;
+	IF FROM_211_TO_24O_Days_N_AGR + FROM_181_TO_21O_Days_P > 0 THEN FROM_181_TO_21O_Days_P_AGR = FROM_211_TO_24O_Days_N_AGR + FROM_181_TO_21O_Days_P; ELSE FROM_181_TO_21O_Days_P_AGR =0;
+	FROM_181_TO_21O_Days_N_AGR = FROM_181_TO_21O_Days_P - FROM_181_TO_21O_Days_P_AGR + FROM_211_TO_24O_Days_N_AGR ;
+	IF FROM_181_TO_21O_Days_N_AGR + FROM_151_TO_18O_Days_P > 0 THEN FROM_151_TO_18O_Days_P_AGR = FROM_181_TO_21O_Days_N_AGR + FROM_151_TO_18O_Days_P; ELSE FROM_151_TO_18O_Days_P_AGR =0;
+	FROM_151_TO_18O_Days_N_AGR = FROM_151_TO_18O_Days_P - FROM_151_TO_18O_Days_P_AGR + FROM_181_TO_21O_Days_N_AGR ;
+	IF FROM_151_TO_18O_Days_N_AGR + FROM_121_TO_15O_Days_P > 0 THEN FROM_121_TO_15O_Days_P_AGR = FROM_151_TO_18O_Days_N_AGR + FROM_121_TO_15O_Days_P; ELSE FROM_121_TO_15O_Days_P_AGR =0;
+	FROM_121_TO_15O_Days_N_AGR = FROM_121_TO_15O_Days_P - FROM_121_TO_15O_Days_P_AGR + FROM_151_TO_18O_Days_N_AGR ;
+	IF FROM_121_TO_15O_Days_N_AGR + FROM_91_TO_12O_Days_P > 0 THEN FROM_91_TO_12O_Days_P_AGR = FROM_121_TO_15O_Days_N_AGR + FROM_91_TO_12O_Days_P; ELSE FROM_91_TO_12O_Days_P_AGR =0;
+	FROM_91_TO_12O_Days_N_AGR = FROM_91_TO_12O_Days_P - FROM_91_TO_12O_Days_P_AGR + FROM_121_TO_15O_Days_N_AGR ;
+	IF FROM_91_TO_12O_Days_N_AGR + FROM_61_TO_9O_Days_P > 0 THEN FROM_61_TO_9O_Days_P_AGR = FROM_91_TO_12O_Days_N_AGR + FROM_61_TO_9O_Days_P; ELSE FROM_61_TO_9O_Days_P_AGR =0;
+	FROM_61_TO_9O_Days_N_AGR = FROM_61_TO_9O_Days_P - FROM_61_TO_9O_Days_P_AGR + FROM_91_TO_12O_Days_N_AGR ;
+	IF FROM_61_TO_9O_Days_N_AGR + FROM_31_TO_6O_Days_P > 0 THEN FROM_31_TO_6O_Days_P_AGR = FROM_61_TO_9O_Days_N_AGR + FROM_31_TO_6O_Days_P; ELSE FROM_31_TO_6O_Days_P_AGR =0;
+	FROM_31_TO_6O_Days_N_AGR = FROM_31_TO_6O_Days_P - FROM_31_TO_6O_Days_P_AGR + FROM_61_TO_9O_Days_N_AGR ;
+	IF FROM_31_TO_6O_Days_N_AGR + FROM_O_TO_3O_Days_P > 0 THEN FROM_O_TO_3O_Days_P_AGR = FROM_31_TO_6O_Days_N_AGR + FROM_O_TO_3O_Days_P; ELSE FROM_O_TO_3O_Days_P_AGR =0;
+	FROM_O_TO_3O_Days_N_AGR = FROM_O_TO_3O_Days_P - FROM_O_TO_3O_Days_P_AGR + FROM_31_TO_6O_Days_N_AGR ;
+	IF FROM_O_TO_3O_Days_N_AGR + LESS_O_Days_P > 0 THEN LESS_O_Days_P_AGR = FROM_O_TO_3O_Days_N_AGR + LESS_O_Days_P; ELSE LESS_O_Days_P_AGR =0;
+	LESS_O_Days_N_AGR = LESS_O_Days_P - LESS_O_Days_P_AGR + FROM_O_TO_3O_Days_N_AGR ;
+
+RUN;
+
+/*9.12 SET THE CORRECT TABLE FOR THE RESULTS*/
+DATA NCGAGEDDEBT2;
+	SET W;
+RUN;
+DATA NCGAGEDDEBT;
+	SET NCGAGEDDEBT2;
+RUN;
+
+/*************************TO THE AUDIT PART********************************/
+
+/*9.9 FILL THE CHECK COLUMN*/
+DATA NCGAGEDDEBT;
+	SET NCGAGEDDEBT;
+CHECK = SUM(SUM(DEBT, CREDIT),-SUM(LESS_O_Days_P_AGR, FROM_O_TO_3O_Days_P_AGR, FROM_31_TO_6O_Days_P_AGR, FROM_61_TO_9O_Days_P_AGR, FROM_91_TO_12O_Days_P_AGR, FROM_121_TO_15O_Days_P_AGR, FROM_151_TO_18O_Days_P_AGR, FROM_181_TO_21O_Days_P_AGR, FROM_211_TO_24O_Days_P_AGR, FROM_241_TO_27O_Days_P_AGR, FROM_271_TO_3OO_Days_P_AGR, FROM_3O1_TO_33O_Days_P_AGR, FROM_331_TO_365_Days_P_AGR, Year_2_P_AGR, Year_3_P_AGR, Year_4_P_AGR, Year_5_P_AGR, Year_6_P_AGR, Year_6M_P_AGR
+));
+run;
+
+
+
+/*A.3.3 We continue creating the NON Corporate debt credit summary*/
+proc sql;
+CREATE TABLE Credit_resume4_3
+AS
+SELECT SUM(CHECK) as Plus_credit_cust3
+FROM  ncgageddebt as c;
+quit;
+
+/*************************TO THE AUDIT PART********************************/
+
+
+
+/*9.13 DELETE SOME TEMPORAL TABLES*/
+PROC DELETE DATA = WORK.V WORK.W WORK.NCGAGEDDEBT2 WORK.MERGE_NON WORK.NEW; RUN;
+
+/*STEP 10: Split the CORP GROUP Aged debt*/
+
+/*10.1 Add new rows that allows to cut off the first copied row from the future pivot table to make
+and ensure that we are considering all the aged_debt intervals*/
+PROC SQL;
+	INSERT INTO CGAGEDDEBT VALUES ('AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'000 Days',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES ('AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'000-030 Days',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'031-060 Days',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES (	'AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'061-090 Days',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'091-120 Days',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES (	'AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'121-150 Days',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'151-180 Days',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES (	'AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'181-210 Days',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'211-240 Days',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES (	'AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'241-270 Days',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'271-300 Days',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES (	'AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'301-330 Days',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'331-365 Days',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES (	'AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 2',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 3',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES (	'AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 4',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 5',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES (	'AAAAAAAA',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 6',	4
+	);
+	INSERT INTO CGAGEDDEBT VALUES (	'BBBBBBBB',NULL,NULL,	0.00,	0.00,	102,	7,NULL,	37,	-30,	'6Year +',	'Year 6+',	4
+	);
+QUIT;
+
+/*10.2 Use proc tabulate to create a pivot table adding up the total_bar_clear column in each Aged_Band
+for every cust_ref*/
+ods excel file = "C:/Users/FranciscoM/Desktop/SAMPLE.xlsx"; 
+proc tabulate
+	data = CGAGEDDEBT;
+	/*THE COLUMNS TO SEGMENTATE*/
+	class AGED_BANDS cust_ref;
+	var total_bal_clear;
+	tables cust_ref, AGED_BANDS*total_bal_clear*(sum);
+run;
+ods excel close;
+
+/*10.3 Import the pivot table to SAS*/
+PROC IMPORT DATAFILE = "C:/Users/FranciscoM/Desktop/SAMPLE.xlsx"
+	OUT = WORK.CGAGEDDEBT2
+	DBMS = XLSX
+	REPLACE;
+	GETNAMES = NO;
+	DATAROW = 7;
+RUN;
+
+/*10.4 ADD ALL NEW COLUMNS IN A PROPER FORMAT*/
+DATA CGAGEDDEBT2;
+	SET CGAGEDDEBT2;
+	cust_ref = A;
+	LESS_O_Days= input (B , best12.);
+	FROM_O_TO_3O_Days= input (C , best12.);
+	FROM_31_TO_6O_Days= input (D , best12.);
+	FROM_61_TO_9O_Days= input (E , best12.);
+	FROM_91_TO_12O_Days= input (F , best12.);
+	FROM_121_TO_15O_Days= input (G , best12.);
+	FROM_151_TO_18O_Days= input (H , best12.);
+	FROM_181_TO_21O_Days= input (I , best12.);
+	FROM_211_TO_24O_Days= input (J , best12.);
+	FROM_241_TO_27O_Days= input (K , best12.);
+	FROM_271_TO_3OO_Days= input (L , best12.);
+	FROM_3O1_TO_33O_Days= input (M , best12.);
+	FROM_331_TO_365_Days= input (N , best12.);
+	Year_2= input (O , best12.);
+	Year_3= input (P , best12.);
+	Year_4= input (Q , best12.);
+	Year_5= input (R , best12.);
+	Year_6= input (S , best12.);
+	Year_6M= input (T , best12.);
+
+	DROP A;
+	DROP B;
+	DROP C;
+	DROP D;
+	DROP E;
+	DROP F;
+	DROP G;
+	DROP H;
+	DROP I;
+	DROP J;
+	DROP K;
+	DROP L;
+	DROP M;
+	DROP N;
+	DROP O;
+	DROP P;
+	DROP Q;
+	DROP R;
+	DROP S;
+	DROP T;
+RUN;
+/*10.5 here we change the name of the column to merge tables in the next step*/
+DATA new;
+	set Nonbills;
+	cust_ref = Customer;
+	DROP Customer;
+run;
+/*Obs: this is a left merge in SAS directly and easy*/
+/*10.6 SET THE NON CORP GROUP TABLE WITH THE CORRECT COLUMNS*/
+DATA MERGE_NON;
+	MERGE CGAGEDDEBT2 (IN = A) NEW (IN = B);
+	BY cust_ref;
+	IF A;
+RUN;
+
+
+/*********SUMMARY DEBT PART***************************************************************************/
+
+/* A.2.3 Non Bill Adjust*/
+/*Here we have to sum all the Total Non Bills that were placed for each customer*/
+
+
+/*We will start creating the Corp Non Bill summary*/
+
+proc sql;
+CREATE TABLE NB_resume4_3
+AS
+SELECT SUM(NON_BIL) as Non_bil_adjust3
+FROM MERGE_NON;
+quit;
+
+/*A.2.4 Create and export the non_bil_adjust table*/
+/*Here we generate the final sum between the early summaries*/
+proc sql;
+CREATE TABLE NB_resume
+AS
+SELECT A.Non_bil_adjust1+B.Non_bil_adjust2+C.Non_bil_adjust3 as Non_bil_adjust
+FROM  NB_resume4_1 as A, NB_resume4_2 as B, NB_resume4_3 as C;
+quit;
+
+/*And we finish with the export of this number*/
+proc EXPORT DATA = NB_resume
+
+OUTFILE = "C:/Users/FranciscoM/Desktop/GLOBAL_AGED_DEBT.xlsx"
+DBMS = XLSX REPLACE;
+sheet= 'Non_bil_adjust';
+
+RUN;
+
+/*********SUMMARY DEBT PART***************************************************************************/
+
+
+
+/*10.7 ADD THE COLUMN GRAND_TOTAL*/
+DATA CGAGEDDEBT2;
+	SET MERGE_NON;
+	NUTEVA = SUM(Year_6M, NON_BIL);
+	DROP Year_6M NON_BIL;
+	RENAME NUTEVA = Year_6M;
+	GRAN_TOTAL = SUM(of LESS_O_Days	FROM_O_TO_3O_Days	FROM_31_TO_6O_Days	FROM_61_TO_9O_Days	FROM_91_TO_12O_Days	FROM_121_TO_15O_Days	FROM_151_TO_18O_Days	FROM_181_TO_21O_Days	FROM_211_TO_24O_Days	FROM_241_TO_27O_Days	FROM_271_TO_3OO_Days	FROM_3O1_TO_33O_Days	FROM_331_TO_365_Days	Year_2	Year_3	Year_4	Year_5	Year_6	Year_6M
+	);
+RUN;
+
+/*10.8 Adding the new individual columns*/
+PROC SQL;
+	CREATE TABLE V
+	AS
+	SELECT DISTINCT *
+	/*POSSITIVE PART*/
+	,CASE WHEN LESS_O_Days >= 0 THEN LESS_O_Days ELSE 0 END AS LESS_O_Days_P
+	,CASE WHEN FROM_O_TO_3O_Days >= 0 THEN FROM_O_TO_3O_Days ELSE 0 END AS FROM_O_TO_3O_Days_P
+	,CASE WHEN FROM_31_TO_6O_Days >= 0 THEN FROM_31_TO_6O_Days ELSE 0 END AS FROM_31_TO_6O_Days_P
+	,CASE WHEN FROM_61_TO_9O_Days >= 0 THEN FROM_61_TO_9O_Days ELSE 0 END AS FROM_61_TO_9O_Days_P
+	,CASE WHEN FROM_91_TO_12O_Days >= 0 THEN FROM_91_TO_12O_Days ELSE 0 END AS FROM_91_TO_12O_Days_P
+	,CASE WHEN FROM_121_TO_15O_Days >= 0 THEN FROM_121_TO_15O_Days ELSE 0 END AS FROM_121_TO_15O_Days_P
+	,CASE WHEN FROM_151_TO_18O_Days >= 0 THEN FROM_151_TO_18O_Days ELSE 0 END AS FROM_151_TO_18O_Days_P
+	,CASE WHEN FROM_181_TO_21O_Days >= 0 THEN FROM_181_TO_21O_Days ELSE 0 END AS FROM_181_TO_21O_Days_P
+	,CASE WHEN FROM_211_TO_24O_Days >= 0 THEN FROM_211_TO_24O_Days ELSE 0 END AS FROM_211_TO_24O_Days_P
+	,CASE WHEN FROM_241_TO_27O_Days >= 0 THEN FROM_241_TO_27O_Days ELSE 0 END AS FROM_241_TO_27O_Days_P
+	,CASE WHEN FROM_271_TO_3OO_Days >= 0 THEN FROM_271_TO_3OO_Days ELSE 0 END AS FROM_271_TO_3OO_Days_P
+	,CASE WHEN FROM_3O1_TO_33O_Days >= 0 THEN FROM_3O1_TO_33O_Days ELSE 0 END AS FROM_3O1_TO_33O_Days_P
+	,CASE WHEN FROM_331_TO_365_Days >= 0 THEN FROM_331_TO_365_Days ELSE 0 END AS FROM_331_TO_365_Days_P
+	,CASE WHEN Year_2 >= 0 THEN Year_2 ELSE 0 END AS Year_2_P
+	,CASE WHEN Year_3 >= 0 THEN Year_3 ELSE 0 END AS Year_3_P
+	,CASE WHEN Year_4 >= 0 THEN Year_4 ELSE 0 END AS Year_4_P
+	,CASE WHEN Year_5 >= 0 THEN Year_5 ELSE 0 END AS Year_5_P
+	,CASE WHEN Year_6 >= 0 THEN Year_6 ELSE 0 END AS Year_6_P
+	,CASE WHEN Year_6M >= 0 THEN Year_6M ELSE 0 END AS Year_6M_P
+
+	/*NEGATIVE PART*/
+	,CASE WHEN LESS_O_Days <= 0 THEN LESS_O_Days ELSE 0 END AS LESS_O_Days_N
+	,CASE WHEN FROM_O_TO_3O_Days <= 0 THEN FROM_O_TO_3O_Days ELSE 0 END AS FROM_O_TO_3O_Days_N
+	,CASE WHEN FROM_31_TO_6O_Days <= 0 THEN FROM_31_TO_6O_Days ELSE 0 END AS FROM_31_TO_6O_Days_N
+	,CASE WHEN FROM_61_TO_9O_Days <= 0 THEN FROM_61_TO_9O_Days ELSE 0 END AS FROM_61_TO_9O_Days_N
+	,CASE WHEN FROM_91_TO_12O_Days <= 0 THEN FROM_91_TO_12O_Days ELSE 0 END AS FROM_91_TO_12O_Days_N
+	,CASE WHEN FROM_121_TO_15O_Days <= 0 THEN FROM_121_TO_15O_Days ELSE 0 END AS FROM_121_TO_15O_Days_N
+	,CASE WHEN FROM_151_TO_18O_Days <= 0 THEN FROM_151_TO_18O_Days ELSE 0 END AS FROM_151_TO_18O_Days_N
+	,CASE WHEN FROM_181_TO_21O_Days <= 0 THEN FROM_181_TO_21O_Days ELSE 0 END AS FROM_181_TO_21O_Days_N
+	,CASE WHEN FROM_211_TO_24O_Days <= 0 THEN FROM_211_TO_24O_Days ELSE 0 END AS FROM_211_TO_24O_Days_N
+	,CASE WHEN FROM_241_TO_27O_Days <= 0 THEN FROM_241_TO_27O_Days ELSE 0 END AS FROM_241_TO_27O_Days_N
+	,CASE WHEN FROM_271_TO_3OO_Days <= 0 THEN FROM_271_TO_3OO_Days ELSE 0 END AS FROM_271_TO_3OO_Days_N
+	,CASE WHEN FROM_3O1_TO_33O_Days <= 0 THEN FROM_3O1_TO_33O_Days ELSE 0 END AS FROM_3O1_TO_33O_Days_N
+	,CASE WHEN FROM_331_TO_365_Days <= 0 THEN FROM_331_TO_365_Days ELSE 0 END AS FROM_331_TO_365_Days_N
+	,CASE WHEN Year_2 <= 0 THEN Year_2 ELSE 0 END AS Year_2_N
+	,CASE WHEN Year_3 <= 0 THEN Year_3 ELSE 0 END AS Year_3_N
+	,CASE WHEN Year_4 <= 0 THEN Year_4 ELSE 0 END AS Year_4_N
+	,CASE WHEN Year_5 <= 0 THEN Year_5 ELSE 0 END AS Year_5_N
+	,CASE WHEN Year_6 <= 0 THEN Year_6 ELSE 0 END AS Year_6_N
+	,CASE WHEN Year_6M <= 0 THEN Year_6M ELSE 0 END AS Year_6M_N
+
+FROM CGAGEDDEBT2;
+QUIT;
+
+/*10.9 SET THE CORRECT TABLES*/
+DATA CGAGEDDEBT2;
+	SET V;
+RUN;
+DATA CGAGEDDEBT;
+	SET CGAGEDDEBT2;
+RUN;
+
+
+/*10.10 DELETE ALL THE TEMPORAL TABLES*/
+PROC DELETE DATA = WORK.V WORK.CGAGEDDEBT2 WORK.NEW WORK.MERGE_NON; RUN;
+
+/*STEP 11: WRAPPING UP AND EXPORT*/
+
+/*11.1 CREATE THE BASIC TABLE WITH ALL THE GROUPS ACCOUNTS ON IT*/
+PROC SQL;
+	CREATE TABLE PRUEBA
+	AS
+	SELECT DISTINCT A.*, GROUPE.group
+	FROM CGAGEDDEBT AS A LEFT JOIN GROUPE
+	ON A.cust_ref = GROUPE.Row_labels 
+	ORDER BY GROUPE.group;
+QUIT;
+
+
+/*11.2 CREATE CREDIT UP TABLE (THE FIRST PART OF THE EXCEL WITH THE RESUME OF EVERY ,CREDIT FOR EACH CUST_REF)*/
+PROC SQL;
+	CREATE TABLE CREDITUP
+	AS
+	SELECT PRUEBA.group , SUM(LESS_O_Days_N) AS LESS_O_Days_N_UP	, SUM(FROM_O_TO_3O_Days_N) AS FROM_O_TO_3O_Days_N_UP	, SUM(FROM_31_TO_6O_Days_N) AS FROM_31_TO_6O_Days_N_UP	, SUM(FROM_61_TO_9O_Days_N) AS FROM_61_TO_9O_Days_N_UP	, SUM(FROM_91_TO_12O_Days_N) AS FROM_91_TO_12O_Days_N_UP	, SUM(FROM_121_TO_15O_Days_N) AS FROM_121_TO_15O_Days_N_UP	, SUM(FROM_151_TO_18O_Days_N) AS FROM_151_TO_18O_Days_N_UP	, SUM(FROM_181_TO_21O_Days_N) AS FROM_181_TO_21O_Days_N_UP	, SUM(FROM_211_TO_24O_Days_N) AS FROM_211_TO_24O_Days_N_UP	, SUM(FROM_241_TO_27O_Days_N) AS FROM_241_TO_27O_Days_N_UP	, SUM(FROM_271_TO_3OO_Days_N) AS FROM_271_TO_3OO_Days_N_UP	, SUM(FROM_3O1_TO_33O_Days_N) AS FROM_3O1_TO_33O_Days_N_UP	, SUM(FROM_331_TO_365_Days_N) AS FROM_331_TO_365_Days_N_UP	, SUM(Year_2_N) AS Year_2_N_UP	, SUM(Year_3_N) AS Year_3_N_UP	, SUM(Year_4_N) AS Year_4_N_UP	, SUM(Year_5_N) AS Year_5_N_UP	, SUM(Year_6_N) AS Year_6_N_UP	, SUM(Year_6M_N) AS Year_6M_N_UP
+	FROM PRUEBA
+	GROUP BY PRUEBA.group;
+QUIT;
+
+/*11.2 CREATE DEBT UP TABLE (THE FIRST PART OF THE EXCEL WITH THE RESUME OF EVERY DEBT FOR EACH CUST_REF)*/
+PROC SQL;
+	CREATE TABLE DEBTUP
+	AS
+	SELECT PRUEBA.group , SUM(LESS_O_Days_P) AS LESS_O_Days_P_UP	, SUM(FROM_O_TO_3O_Days_P) AS FROM_O_TO_3O_Days_P_UP	, SUM(FROM_31_TO_6O_Days_P) AS FROM_31_TO_6O_Days_P_UP	, SUM(FROM_61_TO_9O_Days_P) AS FROM_61_TO_9O_Days_P_UP	, SUM(FROM_91_TO_12O_Days_P) AS FROM_91_TO_12O_Days_P_UP	, SUM(FROM_121_TO_15O_Days_P) AS FROM_121_TO_15O_Days_P_UP	, SUM(FROM_151_TO_18O_Days_P) AS FROM_151_TO_18O_Days_P_UP	, SUM(FROM_181_TO_21O_Days_P) AS FROM_181_TO_21O_Days_P_UP	, SUM(FROM_211_TO_24O_Days_P) AS FROM_211_TO_24O_Days_P_UP	, SUM(FROM_241_TO_27O_Days_P) AS FROM_241_TO_27O_Days_P_UP	, SUM(FROM_271_TO_3OO_Days_P) AS FROM_271_TO_3OO_Days_P_UP	, SUM(FROM_3O1_TO_33O_Days_P) AS FROM_3O1_TO_33O_Days_P_UP	, SUM(FROM_331_TO_365_Days_P) AS FROM_331_TO_365_Days_P_UP	, SUM(Year_2_P) AS Year_2_P_UP	, SUM(Year_3_P) AS Year_3_P_UP	, SUM(Year_4_P) AS Year_4_P_UP	, SUM(Year_5_P) AS Year_5_P_UP	, SUM(Year_6_P) AS Year_6_P_UP	, SUM(Year_6M_P) AS Year_6M_P_UP
+	FROM PRUEBA
+	GROUP BY PRUEBA.group;
+QUIT;
+
+/*11.3 JOINT THE DEBTUP WITH CREDITUP*/
+PROC SQL;
+	CREATE TABLE CGAGEDDEBTUP
+	AS
+	SELECT A.*, CREDITUP.*
+	FROM DEBTUP AS A FULL OUTER JOIN CREDITUP
+	ON A.group = CREDITUP.group
+	ORDER BY A.group;
+QUIT;
+
+/*11.4 CREATE CHECKING COLUMNS*/
+DATA CGAGEDDEBTUP;
+	SET CGAGEDDEBTUP;
+	DEBT = SUM(of LESS_O_Days_P_UP	FROM_O_TO_3O_Days_P_UP	FROM_31_TO_6O_Days_P_UP	FROM_61_TO_9O_Days_P_UP	FROM_91_TO_12O_Days_P_UP	FROM_121_TO_15O_Days_P_UP	FROM_151_TO_18O_Days_P_UP	FROM_181_TO_21O_Days_P_UP	FROM_211_TO_24O_Days_P_UP	FROM_241_TO_27O_Days_P_UP	FROM_271_TO_3OO_Days_P_UP	FROM_3O1_TO_33O_Days_P_UP	FROM_331_TO_365_Days_P_UP	Year_2_P_UP	Year_3_P_UP	Year_4_P_UP	Year_5_P_UP	Year_6_P_UP	Year_6M_P_UP
+	);
+	CREDIT = SUM(of LESS_O_Days_N_UP	FROM_O_TO_3O_Days_N_UP	FROM_31_TO_6O_Days_N_UP	FROM_61_TO_9O_Days_N_UP	FROM_91_TO_12O_Days_N_UP	FROM_121_TO_15O_Days_N_UP	FROM_151_TO_18O_Days_N_UP	FROM_181_TO_21O_Days_N_UP	FROM_211_TO_24O_Days_N_UP	FROM_241_TO_27O_Days_N_UP	FROM_271_TO_3OO_Days_N_UP	FROM_3O1_TO_33O_Days_N_UP	FROM_331_TO_365_Days_N_UP	Year_2_N_UP	Year_3_N_UP	Year_4_N_UP	Year_5_N_UP	Year_6_N_UP	Year_6M_N_UP
+	);
+run;
+
+/*11.5 CHANGE THE COLUMNS TO PROPER FORMAT*/
+DATA CGAGEDDEBTUP;
+	SET CGAGEDDEBTUP;
+
+	/*PART POSSITIVE - DEBT - AGREGGATED*/
+	LESS_O_Days_P_AGR_UP = input(0, Best12.) ;
+	FROM_O_TO_3O_Days_P_AGR_UP = input(0, Best12.) ;
+	FROM_31_TO_6O_Days_P_AGR_UP = input(0, Best12.) ;
+	FROM_61_TO_9O_Days_P_AGR_UP = input(0, Best12.) ;
+	FROM_91_TO_12O_Days_P_AGR_UP = input(0, Best12.) ;
+	FROM_121_TO_15O_Days_P_AGR_UP = input(0, Best12.) ;
+	FROM_151_TO_18O_Days_P_AGR_UP = input(0, Best12.) ;
+	FROM_181_TO_21O_Days_P_AGR_UP = input(0, Best12.) ;
+	FROM_211_TO_24O_Days_P_AGR_UP = input(0, Best12.) ;
+	FROM_241_TO_27O_Days_P_AGR_UP = input(0, Best12.) ;
+	FROM_271_TO_3OO_Days_P_AGR_UP = input(0, Best12.) ;
+	FROM_3O1_TO_33O_Days_P_AGR_UP = input(0, Best12.) ;
+	FROM_331_TO_365_Days_P_AGR_UP = input(0, Best12.) ;
+	Year_2_P_AGR_UP = input(0, Best12.) ;
+	Year_3_P_AGR_UP = input(0, Best12.) ;
+	Year_4_P_AGR_UP = input(0, Best12.) ;
+	Year_5_P_AGR_UP = input(0, Best12.) ;
+	Year_6_P_AGR_UP = input(0, Best12.) ;
+	Year_6M_P_AGR_UP = input(0, Best12.) ;
+
+	/*PART NEGATIVE - CREDIT - AGREGGATED*/
+	LESS_O_Days_N_AGR_UP = input(0, Best12.) ;
+	FROM_O_TO_3O_Days_N_AGR_UP = input(0, Best12.) ;
+	FROM_31_TO_6O_Days_N_AGR_UP = input(0, Best12.) ;
+	FROM_61_TO_9O_Days_N_AGR_UP = input(0, Best12.) ;
+	FROM_91_TO_12O_Days_N_AGR_UP = input(0, Best12.) ;
+	FROM_121_TO_15O_Days_N_AGR_UP = input(0, Best12.) ;
+	FROM_151_TO_18O_Days_N_AGR_UP = input(0, Best12.) ;
+	FROM_181_TO_21O_Days_N_AGR_UP = input(0, Best12.) ;
+	FROM_211_TO_24O_Days_N_AGR_UP = input(0, Best12.) ;
+	FROM_241_TO_27O_Days_N_AGR_UP = input(0, Best12.) ;
+	FROM_271_TO_3OO_Days_N_AGR_UP = input(0, Best12.) ;
+	FROM_3O1_TO_33O_Days_N_AGR_UP = input(0, Best12.) ;
+	FROM_331_TO_365_Days_N_AGR_UP = input(0, Best12.) ;
+	Year_2_N_AGR_UP = input(0, Best12.) ;
+	Year_3_N_AGR_UP = input(0, Best12.) ;
+	Year_4_N_AGR_UP = input(0, Best12.) ;
+	Year_5_N_AGR_UP = input(0, Best12.) ;
+	Year_6_N_AGR_UP = input(0, Best12.) ;
+	Year_6M_N_AGR_UP = input(0, Best12.) ;
+
+run;
+
+/*11.6 ADD THE RULES TO WRAP UP THE SUM OF EACH AGREGATE COLUMN*/
+DATA CGAGEDDEBTUP;
+	SET CGAGEDDEBTUP;
+	IF CREDIT + Year_6M_P_UP > 0 THEN Year_6M_P_AGR_UP = CREDIT + Year_6M_P_UP; ELSE Year_6M_P_AGR_UP =0;
+	Year_6M_N_AGR_UP = Year_6M_P_UP - Year_6M_P_AGR_UP + CREDIT;
+	IF Year_6M_N_AGR_UP + Year_6_P_UP > 0 THEN Year_6_P_AGR_UP = Year_6M_N_AGR_UP + Year_6_P_UP; ELSE Year_6_P_AGR_UP =0;
+	Year_6_N_AGR_UP = Year_6_P_UP - Year_6_P_AGR_UP + Year_6M_N_AGR_UP ;
+	IF Year_6_N_AGR_UP + Year_5_P_UP > 0 THEN Year_5_P_AGR_UP = Year_6_N_AGR_UP + Year_5_P_UP; ELSE Year_5_P_AGR_UP =0;
+	Year_5_N_AGR_UP = Year_5_P_UP - Year_5_P_AGR_UP + Year_6_N_AGR_UP ;
+	IF Year_5_N_AGR_UP + Year_4_P_UP > 0 THEN Year_4_P_AGR_UP = Year_5_N_AGR_UP + Year_4_P_UP; ELSE Year_4_P_AGR_UP =0;
+	Year_4_N_AGR_UP = Year_4_P_UP - Year_4_P_AGR_UP + Year_5_N_AGR_UP ;
+	IF Year_4_N_AGR_UP + Year_3_P_UP > 0 THEN Year_3_P_AGR_UP = Year_4_N_AGR_UP + Year_3_P_UP; ELSE Year_3_P_AGR_UP =0;
+	Year_3_N_AGR_UP = Year_3_P_UP - Year_3_P_AGR_UP + Year_4_N_AGR_UP ;
+	IF Year_3_N_AGR_UP + Year_2_P_UP > 0 THEN Year_2_P_AGR_UP = Year_3_N_AGR_UP + Year_2_P_UP; ELSE Year_2_P_AGR_UP =0;
+	Year_2_N_AGR_UP = Year_2_P_UP - Year_2_P_AGR_UP + Year_3_N_AGR_UP ;
+	IF Year_2_N_AGR_UP + FROM_O_TO_3O_Days_P_UP > 0 THEN FROM_O_TO_3O_Days_P_AGR_UP = Year_2_N_AGR_UP + FROM_O_TO_3O_Days_P_UP; ELSE FROM_O_TO_3O_Days_P_AGR_UP =0;
+	FROM_O_TO_3O_Days_N_AGR_UP = FROM_O_TO_3O_Days_P_UP - FROM_O_TO_3O_Days_P_AGR_UP + Year_2_N_AGR_UP ;
+	IF FROM_O_TO_3O_Days_N_AGR_UP + FROM_91_TO_12O_Days_P_UP > 0 THEN FROM_91_TO_12O_Days_P_AGR_UP = FROM_O_TO_3O_Days_N_AGR_UP + FROM_91_TO_12O_Days_P_UP; ELSE FROM_91_TO_12O_Days_P_AGR_UP =0;
+	FROM_91_TO_12O_Days_N_AGR_UP = FROM_91_TO_12O_Days_P_UP - FROM_91_TO_12O_Days_P_AGR_UP + FROM_O_TO_3O_Days_N_AGR_UP ;
+	IF FROM_91_TO_12O_Days_N_AGR_UP + FROM_61_TO_9O_Days_P_UP > 0 THEN FROM_61_TO_9O_Days_P_AGR_UP = FROM_91_TO_12O_Days_N_AGR_UP + FROM_61_TO_9O_Days_P_UP; ELSE FROM_61_TO_9O_Days_P_AGR_UP =0;
+	FROM_61_TO_9O_Days_N_AGR_UP = FROM_61_TO_9O_Days_P_UP - FROM_61_TO_9O_Days_P_AGR_UP + FROM_91_TO_12O_Days_N_AGR_UP ;
+	IF FROM_61_TO_9O_Days_N_AGR_UP + FROM_3O1_TO_33O_Days_P_UP > 0 THEN FROM_3O1_TO_33O_Days_P_AGR_UP = FROM_61_TO_9O_Days_N_AGR_UP + FROM_3O1_TO_33O_Days_P_UP; ELSE FROM_3O1_TO_33O_Days_P_AGR_UP =0;
+	FROM_3O1_TO_33O_Days_N_AGR_UP = FROM_3O1_TO_33O_Days_P_UP - FROM_3O1_TO_33O_Days_P_AGR_UP + FROM_61_TO_9O_Days_N_AGR_UP ;
+	IF FROM_3O1_TO_33O_Days_N_AGR_UP + FROM_331_TO_365_Days_P_UP > 0 THEN FROM_331_TO_365_Days_P_AGR_UP = FROM_3O1_TO_33O_Days_N_AGR_UP + FROM_331_TO_365_Days_P_UP; ELSE FROM_331_TO_365_Days_P_AGR_UP =0;
+	FROM_331_TO_365_Days_N_AGR_UP = FROM_331_TO_365_Days_P_UP - FROM_331_TO_365_Days_P_AGR_UP + FROM_3O1_TO_33O_Days_N_AGR_UP ;
+	IF FROM_331_TO_365_Days_N_AGR_UP + FROM_31_TO_6O_Days_P_UP > 0 THEN FROM_31_TO_6O_Days_P_AGR_UP = FROM_331_TO_365_Days_N_AGR_UP + FROM_31_TO_6O_Days_P_UP; ELSE FROM_31_TO_6O_Days_P_AGR_UP =0;
+	FROM_31_TO_6O_Days_N_AGR_UP = FROM_31_TO_6O_Days_P_UP - FROM_31_TO_6O_Days_P_AGR_UP + FROM_331_TO_365_Days_N_AGR_UP ;
+	IF FROM_31_TO_6O_Days_N_AGR_UP + FROM_271_TO_3OO_Days_P_UP > 0 THEN FROM_271_TO_3OO_Days_P_AGR_UP = FROM_31_TO_6O_Days_N_AGR_UP + FROM_271_TO_3OO_Days_P_UP; ELSE FROM_271_TO_3OO_Days_P_AGR_UP =0;
+	FROM_271_TO_3OO_Days_N_AGR_UP = FROM_271_TO_3OO_Days_P_UP - FROM_271_TO_3OO_Days_P_AGR_UP + FROM_31_TO_6O_Days_N_AGR_UP ;
+	IF FROM_271_TO_3OO_Days_N_AGR_UP + FROM_241_TO_27O_Days_P_UP > 0 THEN FROM_241_TO_27O_Days_P_AGR_UP = FROM_271_TO_3OO_Days_N_AGR_UP + FROM_241_TO_27O_Days_P_UP; ELSE FROM_241_TO_27O_Days_P_AGR_UP =0;
+	FROM_241_TO_27O_Days_N_AGR_UP = FROM_241_TO_27O_Days_P_UP - FROM_241_TO_27O_Days_P_AGR_UP + FROM_271_TO_3OO_Days_N_AGR_UP ;
+	IF FROM_241_TO_27O_Days_N_AGR_UP + FROM_211_TO_24O_Days_P_UP > 0 THEN FROM_211_TO_24O_Days_P_AGR_UP = FROM_241_TO_27O_Days_N_AGR_UP + FROM_211_TO_24O_Days_P_UP; ELSE FROM_211_TO_24O_Days_P_AGR_UP =0;
+	FROM_211_TO_24O_Days_N_AGR_UP = FROM_211_TO_24O_Days_P_UP - FROM_211_TO_24O_Days_P_AGR_UP + FROM_241_TO_27O_Days_N_AGR_UP ;
+	IF FROM_211_TO_24O_Days_N_AGR_UP + FROM_181_TO_21O_Days_P_UP > 0 THEN FROM_181_TO_21O_Days_P_AGR_UP = FROM_211_TO_24O_Days_N_AGR_UP + FROM_181_TO_21O_Days_P_UP; ELSE FROM_181_TO_21O_Days_P_AGR_UP =0;
+	FROM_181_TO_21O_Days_N_AGR_UP = FROM_181_TO_21O_Days_P_UP - FROM_181_TO_21O_Days_P_AGR_UP + FROM_211_TO_24O_Days_N_AGR_UP ;
+	IF FROM_181_TO_21O_Days_N_AGR_UP + FROM_151_TO_18O_Days_P_UP > 0 THEN FROM_151_TO_18O_Days_P_AGR_UP = FROM_181_TO_21O_Days_N_AGR_UP + FROM_151_TO_18O_Days_P_UP; ELSE FROM_151_TO_18O_Days_P_AGR_UP =0;
+	FROM_151_TO_18O_Days_N_AGR_UP = FROM_151_TO_18O_Days_P_UP - FROM_151_TO_18O_Days_P_AGR_UP + FROM_181_TO_21O_Days_N_AGR_UP ;
+	IF FROM_151_TO_18O_Days_N_AGR_UP + FROM_121_TO_15O_Days_P_UP > 0 THEN FROM_121_TO_15O_Days_P_AGR_UP = FROM_151_TO_18O_Days_N_AGR_UP + FROM_121_TO_15O_Days_P_UP; ELSE FROM_121_TO_15O_Days_P_AGR_UP =0;
+	FROM_121_TO_15O_Days_N_AGR_UP = FROM_121_TO_15O_Days_P_UP - FROM_121_TO_15O_Days_P_AGR_UP + FROM_151_TO_18O_Days_N_AGR_UP ;
+	IF FROM_121_TO_15O_Days_N_AGR_UP + LESS_O_Days_P_UP > 0 THEN LESS_O_Days_P_AGR_UP = FROM_121_TO_15O_Days_N_AGR_UP + LESS_O_Days_P_UP; ELSE LESS_O_Days_P_AGR_UP =0;
+	LESS_O_Days_N_AGR_UP = LESS_O_Days_P_UP - LESS_O_Days_P_AGR_UP + FROM_121_TO_15O_Days_N_AGR_UP ;
+
+RUN;
+
+/*11.7 ADD THE GRAN TOTAL COLUMN*/
+DATA CGAGEDDEBTUP;
+	SET CGAGEDDEBTUP;
+	GRAN_TOTAL_FINAL = SUM(of LESS_O_Days_P_AGR_UP	 FROM_121_TO_15O_Days_P_AGR_UP	FROM_151_TO_18O_Days_P_AGR_UP	FROM_181_TO_21O_Days_P_AGR_UP	FROM_211_TO_24O_Days_P_AGR_UP	FROM_241_TO_27O_Days_P_AGR_UP	FROM_271_TO_3OO_Days_P_AGR_UP	FROM_31_TO_6O_Days_P_AGR_UP	FROM_331_TO_365_Days_P_AGR_UP	FROM_3O1_TO_33O_Days_P_AGR_UP	FROM_61_TO_9O_Days_P_AGR_UP	FROM_91_TO_12O_Days_P_AGR_UP	FROM_O_TO_3O_Days_P_AGR_UP	Year_2_P_AGR_UP	Year_3_P_AGR_UP	Year_4_P_AGR_UP	Year_5_P_AGR_UP	Year_6_P_AGR_UP	Year_6M_P_AGR_UP
+	);
+run;
+
+/*11.8 CREATE A NEW TABLE WITH THE SECOND PART OF THE BASIC TABLE*/
+DATA z;
+	RETAIN LESS_O_Days_P_UP	FROM_O_TO_3O_Days_P_UP	FROM_31_TO_6O_Days_P_UP	FROM_61_TO_9O_Days_P_UP	FROM_91_TO_12O_Days_P_UP	FROM_121_TO_15O_Days_P_UP	FROM_151_TO_18O_Days_P_UP	FROM_181_TO_21O_Days_P_UP	FROM_211_TO_24O_Days_P_UP	FROM_241_TO_27O_Days_P_UP	FROM_271_TO_3OO_Days_P_UP	FROM_3O1_TO_33O_Days_P_UP	FROM_331_TO_365_Days_P_UP	Year_2_P_UP	Year_3_P_UP	Year_4_P_UP	Year_5_P_UP	Year_6_P_UP	Year_6M_P_UP	LESS_O_Days_N_UP	FROM_O_TO_3O_Days_N_UP	FROM_31_TO_6O_Days_N_UP	FROM_61_TO_9O_Days_N_UP	FROM_91_TO_12O_Days_N_UP	FROM_121_TO_15O_Days_N_UP	FROM_151_TO_18O_Days_N_UP	FROM_181_TO_21O_Days_N_UP	FROM_211_TO_24O_Days_N_UP	FROM_241_TO_27O_Days_N_UP	FROM_271_TO_3OO_Days_N_UP	FROM_3O1_TO_33O_Days_N_UP	FROM_331_TO_365_Days_N_UP	Year_2_N_UP	Year_3_N_UP	Year_4_N_UP	Year_5_N_UP	Year_6_N_UP	Year_6M_N_UP	DEBT	CREDIT	group	GRAN_TOTAL_FINAL	LESS_O_Days_P_AGR_UP	FROM_O_TO_3O_Days_P_AGR_UP	FROM_31_TO_6O_Days_P_AGR_UP	FROM_61_TO_9O_Days_P_AGR_UP	FROM_91_TO_12O_Days_P_AGR_UP	FROM_121_TO_15O_Days_P_AGR_UP	FROM_151_TO_18O_Days_P_AGR_UP	FROM_181_TO_21O_Days_P_AGR_UP	FROM_211_TO_24O_Days_P_AGR_UP	FROM_241_TO_27O_Days_P_AGR_UP	FROM_271_TO_3OO_Days_P_AGR_UP	FROM_3O1_TO_33O_Days_P_AGR_UP	FROM_331_TO_365_Days_P_AGR_UP	Year_2_P_AGR_UP	Year_3_P_AGR_UP	Year_4_P_AGR_UP	Year_5_P_AGR_UP	Year_6_P_AGR_UP	Year_6M_P_AGR_UP	LESS_O_Days_N_AGR_UP	FROM_O_TO_3O_Days_N_AGR_UP	FROM_31_TO_6O_Days_N_AGR_UP	FROM_61_TO_9O_Days_N_AGR_UP	FROM_91_TO_12O_Days_N_AGR_UP	FROM_121_TO_15O_Days_N_AGR_UP	FROM_151_TO_18O_Days_N_AGR_UP	FROM_181_TO_21O_Days_N_AGR_UP	FROM_211_TO_24O_Days_N_AGR_UP	FROM_241_TO_27O_Days_N_AGR_UP	FROM_271_TO_3OO_Days_N_AGR_UP	FROM_3O1_TO_33O_Days_N_AGR_UP	FROM_331_TO_365_Days_N_AGR_UP	Year_2_N_AGR_UP	Year_3_N_AGR_UP	Year_4_N_AGR_UP	Year_5_N_AGR_UP	Year_6_N_AGR_UP	Year_6M_N_AGR_UP
+	;
+	SET CGAGEDDEBTUP;
+RUN;
+
+/*11.9 MERGE BOTH TABLES*/
+DATA MERGE_CGAGED;
+	MERGE CGAGEDDEBT(IN=A) Z(IN=B);
+RUN;
+
+/*11.10 UPDATE THE CORP GROUP AGED DEBT TABLE*/
+DATA CGAGEDDEBT;
+	RETAIN cust_ref	GRAN_TOTAL	LESS_O_Days	FROM_O_TO_3O_Days	FROM_31_TO_6O_Days	FROM_61_TO_9O_Days	FROM_91_TO_12O_Days	FROM_121_TO_15O_Days	FROM_151_TO_18O_Days	FROM_181_TO_21O_Days	FROM_211_TO_24O_Days	FROM_241_TO_27O_Days	FROM_271_TO_3OO_Days	FROM_3O1_TO_33O_Days	FROM_331_TO_365_Days	Year_2	Year_3	Year_4	Year_5	Year_6	Year_6M	LESS_O_Days_P	FROM_O_TO_3O_Days_P	FROM_31_TO_6O_Days_P	FROM_61_TO_9O_Days_P	FROM_91_TO_12O_Days_P	FROM_121_TO_15O_Days_P	FROM_151_TO_18O_Days_P	FROM_181_TO_21O_Days_P	FROM_211_TO_24O_Days_P	FROM_241_TO_27O_Days_P	FROM_271_TO_3OO_Days_P	FROM_3O1_TO_33O_Days_P	FROM_331_TO_365_Days_P	Year_2_P	Year_3_P	Year_4_P	Year_5_P	Year_6_P	Year_6M_P	LESS_O_Days_P_UP	FROM_O_TO_3O_Days_P_UP	FROM_31_TO_6O_Days_P_UP	FROM_61_TO_9O_Days_P_UP	FROM_91_TO_12O_Days_P_UP	FROM_121_TO_15O_Days_P_UP	FROM_151_TO_18O_Days_P_UP	FROM_181_TO_21O_Days_P_UP	FROM_211_TO_24O_Days_P_UP	FROM_241_TO_27O_Days_P_UP	FROM_271_TO_3OO_Days_P_UP	FROM_3O1_TO_33O_Days_P_UP	FROM_331_TO_365_Days_P_UP	Year_2_P_UP	Year_3_P_UP	Year_4_P_UP	Year_5_P_UP	Year_6_P_UP	Year_6M_P_UP	LESS_O_Days_N	FROM_O_TO_3O_Days_N	FROM_31_TO_6O_Days_N	FROM_61_TO_9O_Days_N	FROM_91_TO_12O_Days_N	FROM_121_TO_15O_Days_N	FROM_151_TO_18O_Days_N	FROM_181_TO_21O_Days_N	FROM_211_TO_24O_Days_N	FROM_241_TO_27O_Days_N	FROM_271_TO_3OO_Days_N	FROM_3O1_TO_33O_Days_N	FROM_331_TO_365_Days_N	Year_2_N	Year_3_N	Year_4_N	Year_5_N	Year_6_N	Year_6M_N	LESS_O_Days_N_UP	FROM_O_TO_3O_Days_N_UP	FROM_31_TO_6O_Days_N_UP	FROM_61_TO_9O_Days_N_UP	FROM_91_TO_12O_Days_N_UP	FROM_121_TO_15O_Days_N_UP	FROM_151_TO_18O_Days_N_UP	FROM_181_TO_21O_Days_N_UP	FROM_211_TO_24O_Days_N_UP	FROM_241_TO_27O_Days_N_UP	FROM_271_TO_3OO_Days_N_UP	FROM_3O1_TO_33O_Days_N_UP	FROM_331_TO_365_Days_N_UP	Year_2_N_UP	Year_3_N_UP	Year_4_N_UP	Year_5_N_UP	Year_6_N_UP	Year_6M_N_UP	DEBT	CREDIT	group	GRAN_TOTAL_FINAL	LESS_O_Days_P_AGR_UP	FROM_O_TO_3O_Days_P_AGR_UP	FROM_31_TO_6O_Days_P_AGR_UP	FROM_61_TO_9O_Days_P_AGR_UP	FROM_91_TO_12O_Days_P_AGR_UP	FROM_121_TO_15O_Days_P_AGR_UP	FROM_151_TO_18O_Days_P_AGR_UP	FROM_181_TO_21O_Days_P_AGR_UP	FROM_211_TO_24O_Days_P_AGR_UP	FROM_241_TO_27O_Days_P_AGR_UP	FROM_271_TO_3OO_Days_P_AGR_UP	FROM_3O1_TO_33O_Days_P_AGR_UP	FROM_331_TO_365_Days_P_AGR_UP	Year_2_P_AGR_UP	Year_3_P_AGR_UP	Year_4_P_AGR_UP	Year_5_P_AGR_UP	Year_6_P_AGR_UP	Year_6M_P_AGR_UP	LESS_O_Days_N_AGR_UP	FROM_O_TO_3O_Days_N_AGR_UP	FROM_31_TO_6O_Days_N_AGR_UP	FROM_61_TO_9O_Days_N_AGR_UP	FROM_91_TO_12O_Days_N_AGR_UP	FROM_121_TO_15O_Days_N_AGR_UP	FROM_151_TO_18O_Days_N_AGR_UP	FROM_181_TO_21O_Days_N_AGR_UP	FROM_211_TO_24O_Days_N_AGR_UP	FROM_241_TO_27O_Days_N_AGR_UP	FROM_271_TO_3OO_Days_N_AGR_UP	FROM_3O1_TO_33O_Days_N_AGR_UP	FROM_331_TO_365_Days_N_AGR_UP	Year_2_N_AGR_UP	Year_3_N_AGR_UP	Year_4_N_AGR_UP	Year_5_N_AGR_UP	Year_6_N_AGR_UP	Year_6M_N_AGR_UP
+	;
+	SET MERGE_CGAGED;
+RUN;
+
+/*************************TO THE AUDIT PART********************************/
+
+/*11.11 FILL THE CHECK COLUMN*/
+DATA CGAGEDDEBT;
+	SET CGAGEDDEBT;
+CHECK = SUM(SUM(DEBT, CREDIT),-SUM(LESS_O_Days_P_AGR_UP, FROM_O_TO_3O_Days_P_AGR_UP, FROM_31_TO_6O_Days_P_AGR_UP, FROM_61_TO_9O_Days_P_AGR_UP, FROM_91_TO_12O_Days_P_AGR_UP, FROM_121_TO_15O_Days_P_AGR_UP, FROM_151_TO_18O_Days_P_AGR_UP, FROM_181_TO_21O_Days_P_AGR_UP, FROM_211_TO_24O_Days_P_AGR_UP, FROM_241_TO_27O_Days_P_AGR_UP, FROM_271_TO_3OO_Days_P_AGR_UP, FROM_3O1_TO_33O_Days_P_AGR_UP, FROM_331_TO_365_Days_P_AGR_UP, Year_2_P_AGR_UP, Year_3_P_AGR_UP, Year_4_P_AGR_UP, Year_5_P_AGR_UP, Year_6_P_AGR_UP, Year_6M_P_AGR_UP
+));
+run;
+
+
+/* A.3 Plus Credit Customers*/
+/*Here we have to sum all the credits that remain after the proces for each customer TYPE*/
+
+/*A.3.1 We will start creating the corporate debt credit summary*/
+proc sql;
+CREATE TABLE Credit_resume4_1
+AS
+SELECT SUM(CHECK) as Plus_credit_cust1
+FROM cgageddebt as A;
+quit;
+
+
+/*A.3.4 Here we generate the final sum between the early summaries*/
+proc sql;
+CREATE TABLE Credit_resume4
+AS
+SELECT A.Plus_credit_cust1+B.Plus_credit_cust2+C.Plus_credit_cust3 as Plus_credit_cust
+FROM  Credit_resume4_1 as A, Credit_resume4_2 as B, Credit_resume4_3 as C;
+quit;
+
+/*A.3.5 And we finish with the export of this number*/
+proc EXPORT DATA = Credit_resume4
+
+OUTFILE = "C:/Users/FranciscoM/Desktop/GLOBAL_AGED_DEBT.xlsx"
+DBMS = XLSX REPLACE;
+sheet= 'Plus_credit_cust';
+
+RUN;
+
+
+/*************************TO THE AUDIT PART********************************/
+
+/*11.11 DELETE SOME AUXILIAR TABLES*/
+PROC DELETE DATA = MERGE_CGAGED CGAGEDDEBTUP ADDCOLUMNS3 AGEDDEBT CORP CORPACOUNTS CREDITUP DEBTUP GROUPE LPF NONBILLS RESUMEN SME PRUEBA Z ; RUN;
+
+
+/*12. CREATE A CONSOLIDATE TABLE, ONLY WITH AGGREGATED DATA*/
+
+/*12.1 CREATE THE SUBTABLE CORP*/
+DATA CORP;
+	RETAIN type cust_ref group GRAND_TOTAL  LESS_O_Days_P_AGR_UP	FROM_O_TO_3O_Days_P_AGR_UP	FROM_31_TO_6O_Days_P_AGR_UP	FROM_61_TO_9O_Days_P_AGR_UP	FROM_91_TO_12O_Days_P_AGR_UP	FROM_121_TO_15O_Days_P_AGR_UP	FROM_151_TO_18O_Days_P_AGR_UP	FROM_181_TO_21O_Days_P_AGR_UP	FROM_211_TO_24O_Days_P_AGR_UP	FROM_241_TO_27O_Days_P_AGR_UP	FROM_271_TO_3OO_Days_P_AGR_UP	FROM_3O1_TO_33O_Days_P_AGR_UP	FROM_331_TO_365_Days_P_AGR_UP	Year_2_P_AGR_UP	Year_3_P_AGR_UP	Year_4_P_AGR_UP	Year_5_P_AGR_UP	Year_6_P_AGR_UP	Year_6M_P_AGR_UP
+	;
+	SET CGAGEDDEBT;
+	TYPE = 'Corp';
+	cust_ref = "";
+	GRAND_TOTAL = SUM(of LESS_O_Days_P_AGR_UP	 FROM_121_TO_15O_Days_P_AGR_UP	FROM_151_TO_18O_Days_P_AGR_UP	FROM_181_TO_21O_Days_P_AGR_UP	FROM_211_TO_24O_Days_P_AGR_UP	FROM_241_TO_27O_Days_P_AGR_UP	FROM_271_TO_3OO_Days_P_AGR_UP	FROM_31_TO_6O_Days_P_AGR_UP	FROM_331_TO_365_Days_P_AGR_UP	FROM_3O1_TO_33O_Days_P_AGR_UP	FROM_61_TO_9O_Days_P_AGR_UP	FROM_91_TO_12O_Days_P_AGR_UP	FROM_O_TO_3O_Days_P_AGR_UP	Year_2_P_AGR_UP	Year_3_P_AGR_UP	Year_4_P_AGR_UP	Year_5_P_AGR_UP	Year_6_P_AGR_UP	Year_6M_P_AGR_UP
+	);
+
+	DROP GRAN_TOTAL;
+	DROP LESS_O_Days;
+	DROP FROM_O_TO_3O_Days;
+	DROP FROM_31_TO_6O_Days;
+	DROP FROM_61_TO_9O_Days;
+	DROP FROM_91_TO_12O_Days;
+	DROP FROM_121_TO_15O_Days;
+	DROP FROM_151_TO_18O_Days;
+	DROP FROM_181_TO_21O_Days;
+	DROP FROM_211_TO_24O_Days;
+	DROP FROM_241_TO_27O_Days;
+	DROP FROM_271_TO_3OO_Days;
+	DROP FROM_3O1_TO_33O_Days;
+	DROP FROM_331_TO_365_Days;
+	DROP Year_2;
+	DROP Year_3;
+	DROP Year_4;
+	DROP Year_5;
+	DROP Year_6;
+	DROP Year_6M;
+	DROP LESS_O_Days_P;
+	DROP FROM_O_TO_3O_Days_P;
+	DROP FROM_31_TO_6O_Days_P;
+	DROP FROM_61_TO_9O_Days_P;
+	DROP FROM_91_TO_12O_Days_P;
+	DROP FROM_121_TO_15O_Days_P;
+	DROP FROM_151_TO_18O_Days_P;
+	DROP FROM_181_TO_21O_Days_P;
+	DROP FROM_211_TO_24O_Days_P;
+	DROP FROM_241_TO_27O_Days_P;
+	DROP FROM_271_TO_3OO_Days_P;
+	DROP FROM_3O1_TO_33O_Days_P;
+	DROP FROM_331_TO_365_Days_P;
+	DROP Year_2_P;
+	DROP Year_3_P;
+	DROP Year_4_P;
+	DROP Year_5_P;
+	DROP Year_6_P;
+	DROP Year_6M_P;
+	DROP LESS_O_Days_P_UP;
+	DROP FROM_O_TO_3O_Days_P_UP;
+	DROP FROM_31_TO_6O_Days_P_UP;
+	DROP FROM_61_TO_9O_Days_P_UP;
+	DROP FROM_91_TO_12O_Days_P_UP;
+	DROP FROM_121_TO_15O_Days_P_UP;
+	DROP FROM_151_TO_18O_Days_P_UP;
+	DROP FROM_181_TO_21O_Days_P_UP;
+	DROP FROM_211_TO_24O_Days_P_UP;
+	DROP FROM_241_TO_27O_Days_P_UP;
+	DROP FROM_271_TO_3OO_Days_P_UP;
+	DROP FROM_3O1_TO_33O_Days_P_UP;
+	DROP FROM_331_TO_365_Days_P_UP;
+	DROP Year_2_P_UP;
+	DROP Year_3_P_UP;
+	DROP Year_4_P_UP;
+	DROP Year_5_P_UP;
+	DROP Year_6_P_UP;
+	DROP Year_6M_P_UP;
+	DROP LESS_O_Days_N;
+	DROP FROM_O_TO_3O_Days_N;
+	DROP FROM_31_TO_6O_Days_N;
+	DROP FROM_61_TO_9O_Days_N;
+	DROP FROM_91_TO_12O_Days_N;
+	DROP FROM_121_TO_15O_Days_N;
+	DROP FROM_151_TO_18O_Days_N;
+	DROP FROM_181_TO_21O_Days_N;
+	DROP FROM_211_TO_24O_Days_N;
+	DROP FROM_241_TO_27O_Days_N;
+	DROP FROM_271_TO_3OO_Days_N;
+	DROP FROM_3O1_TO_33O_Days_N;
+	DROP FROM_331_TO_365_Days_N;
+	DROP Year_2_N;
+	DROP Year_3_N;
+	DROP Year_4_N;
+	DROP Year_5_N;
+	DROP Year_6_N;
+	DROP Year_6M_N;
+	DROP LESS_O_Days_N_UP;
+	DROP FROM_O_TO_3O_Days_N_UP;
+	DROP FROM_31_TO_6O_Days_N_UP;
+	DROP FROM_61_TO_9O_Days_N_UP;
+	DROP FROM_91_TO_12O_Days_N_UP;
+	DROP FROM_121_TO_15O_Days_N_UP;
+	DROP FROM_151_TO_18O_Days_N_UP;
+	DROP FROM_181_TO_21O_Days_N_UP;
+	DROP FROM_211_TO_24O_Days_N_UP;
+	DROP FROM_241_TO_27O_Days_N_UP;
+	DROP FROM_271_TO_3OO_Days_N_UP;
+	DROP FROM_3O1_TO_33O_Days_N_UP;
+	DROP FROM_331_TO_365_Days_N_UP;
+	DROP Year_2_N_UP;
+	DROP Year_3_N_UP;
+	DROP Year_4_N_UP;
+	DROP Year_5_N_UP;
+	DROP Year_6_N_UP;
+	DROP Year_6M_N_UP;
+	DROP DEBT;
+	DROP CREDIT;
+	DROP GRAN_TOTAL_FINAL;
+	DROP LESS_O_Days_N_AGR_UP;
+	DROP FROM_O_TO_3O_Days_N_AGR_UP;
+	DROP FROM_31_TO_6O_Days_N_AGR_UP;
+	DROP FROM_61_TO_9O_Days_N_AGR_UP;
+	DROP FROM_91_TO_12O_Days_N_AGR_UP;
+	DROP FROM_121_TO_15O_Days_N_AGR_UP;
+	DROP FROM_151_TO_18O_Days_N_AGR_UP;
+	DROP FROM_181_TO_21O_Days_N_AGR_UP;
+	DROP FROM_211_TO_24O_Days_N_AGR_UP;
+	DROP FROM_241_TO_27O_Days_N_AGR_UP;
+	DROP FROM_271_TO_3OO_Days_N_AGR_UP;
+	DROP FROM_3O1_TO_33O_Days_N_AGR_UP;
+	DROP FROM_331_TO_365_Days_N_AGR_UP;
+	DROP Year_2_N_AGR_UP;
+	DROP Year_3_N_AGR_UP;
+	DROP Year_4_N_AGR_UP;
+	DROP Year_5_N_AGR_UP;
+	DROP Year_6_N_AGR_UP;
+	DROP Year_6M_N_AGR_UP;
+
+
+
+run;
+
+/*Here we discart all rows without data on 'name' column*/
+proc sql;
+	DELETE 
+	FROM CORP
+	WHERE CORP.group = '';
+quit;
+
+/*Renamed the columns*/
+DATA CORP;
+	SET CORP;
+	RENAME LESS_O_Days_P_AGR_UP = LESS_O_Days_P;
+	RENAME FROM_O_TO_3O_Days_P_AGR_UP = FROM_O_TO_3O_Days_P;
+	RENAME FROM_31_TO_6O_Days_P_AGR_UP = FROM_31_TO_6O_Days_P;
+	RENAME FROM_61_TO_9O_Days_P_AGR_UP = FROM_61_TO_9O_Days_P;
+	RENAME FROM_91_TO_12O_Days_P_AGR_UP = FROM_91_TO_12O_Days_P;
+	RENAME FROM_121_TO_15O_Days_P_AGR_UP = FROM_121_TO_15O_Days_P;
+	RENAME FROM_151_TO_18O_Days_P_AGR_UP = FROM_151_TO_18O_Days_P;
+	RENAME FROM_181_TO_21O_Days_P_AGR_UP = FROM_181_TO_21O_Days_P;
+	RENAME FROM_211_TO_24O_Days_P_AGR_UP = FROM_211_TO_24O_Days_P;
+	RENAME FROM_241_TO_27O_Days_P_AGR_UP = FROM_241_TO_27O_Days_P;
+	RENAME FROM_271_TO_3OO_Days_P_AGR_UP = FROM_271_TO_3OO_Days_P;
+	RENAME FROM_3O1_TO_33O_Days_P_AGR_UP = FROM_3O1_TO_33O_Days_P;
+	RENAME FROM_331_TO_365_Days_P_AGR_UP = FROM_331_TO_365_Days_P;
+	RENAME Year_2_P_AGR_UP = Year_2_P;
+	RENAME Year_3_P_AGR_UP = Year_3_P;
+	RENAME Year_4_P_AGR_UP = Year_4_P;
+	RENAME Year_5_P_AGR_UP = Year_5_P;
+	RENAME Year_6_P_AGR_UP = Year_6_P;
+	RENAME Year_6M_P_AGR_UP = Year_6M_P;
+
+
+RUN;
+
+
+/*12.2 CREATE THE SUBTABLE SME*/
+DATA SME;
+	RETAIN type cust_ref group GRAND_TOTAL  LESS_O_Days_P_AGR	FROM_O_TO_3O_Days_P_AGR	FROM_31_TO_6O_Days_P_AGR	FROM_61_TO_9O_Days_P_AGR	FROM_91_TO_12O_Days_P_AGR	FROM_121_TO_15O_Days_P_AGR	FROM_151_TO_18O_Days_P_AGR	FROM_181_TO_21O_Days_P_AGR	FROM_211_TO_24O_Days_P_AGR	FROM_241_TO_27O_Days_P_AGR	FROM_271_TO_3OO_Days_P_AGR	FROM_3O1_TO_33O_Days_P_AGR	FROM_331_TO_365_Days_P_AGR	Year_2_P_AGR	Year_3_P_AGR	Year_4_P_AGR	Year_5_P_AGR	Year_6_P_AGR	Year_6M_P_AGR
+;
+	SET SMEAGEDDEBT;
+	TYPE = 'SME';
+	GRAND_TOTAL = SUM(of LESS_O_Days_P_AGR	FROM_O_TO_3O_Days_P_AGR	FROM_31_TO_6O_Days_P_AGR	FROM_61_TO_9O_Days_P_AGR	FROM_91_TO_12O_Days_P_AGR	FROM_121_TO_15O_Days_P_AGR	FROM_151_TO_18O_Days_P_AGR	FROM_181_TO_21O_Days_P_AGR	FROM_211_TO_24O_Days_P_AGR	FROM_241_TO_27O_Days_P_AGR	FROM_271_TO_3OO_Days_P_AGR	FROM_3O1_TO_33O_Days_P_AGR	FROM_331_TO_365_Days_P_AGR	Year_2_P_AGR	Year_3_P_AGR	Year_4_P_AGR	Year_5_P_AGR	Year_6_P_AGR	Year_6M_P_AGR
+);
+
+	DROP LESS_O_Days;
+	DROP FROM_O_TO_3O_Days;
+	DROP FROM_31_TO_6O_Days;
+	DROP FROM_61_TO_9O_Days;
+	DROP FROM_91_TO_12O_Days;
+	DROP FROM_121_TO_15O_Days;
+	DROP FROM_151_TO_18O_Days;
+	DROP FROM_181_TO_21O_Days;
+	DROP FROM_211_TO_24O_Days;
+	DROP FROM_241_TO_27O_Days;
+	DROP FROM_271_TO_3OO_Days;
+	DROP FROM_3O1_TO_33O_Days;
+	DROP FROM_331_TO_365_Days;
+	DROP Year_2;
+	DROP Year_3;
+	DROP Year_4;
+	DROP Year_5;
+	DROP Year_6;
+	DROP Year_6M;
+	DROP GRAN_TOTAL;
+	DROP LESS_O_Days_P_AGR;
+	DROP FROM_O_TO_3O_Days_P_AGR;
+	DROP FROM_31_TO_6O_Days_P_AGR;
+	DROP FROM_61_TO_9O_Days_P_AGR;
+	DROP FROM_91_TO_12O_Days_P_AGR;
+	DROP FROM_121_TO_15O_Days_P_AGR;
+	DROP FROM_151_TO_18O_Days_P_AGR;
+	DROP FROM_181_TO_21O_Days_P_AGR;
+	DROP FROM_211_TO_24O_Days_P_AGR;
+	DROP FROM_241_TO_27O_Days_P_AGR;
+	DROP FROM_271_TO_3OO_Days_P_AGR;
+	DROP FROM_3O1_TO_33O_Days_P_AGR;
+	DROP FROM_331_TO_365_Days_P_AGR;
+	DROP Year_2_P_AGR;
+	DROP Year_3_P_AGR;
+	DROP Year_4_P_AGR;
+	DROP Year_5_P_AGR;
+	DROP Year_6_P_AGR;
+	DROP Year_6M_P_AGR;
+	DROP LESS_O_Days_N;
+	DROP FROM_O_TO_3O_Days_N;
+	DROP FROM_31_TO_6O_Days_N;
+	DROP FROM_61_TO_9O_Days_N;
+	DROP FROM_91_TO_12O_Days_N;
+	DROP FROM_121_TO_15O_Days_N;
+	DROP FROM_151_TO_18O_Days_N;
+	DROP FROM_181_TO_21O_Days_N;
+	DROP FROM_211_TO_24O_Days_N;
+	DROP FROM_241_TO_27O_Days_N;
+	DROP FROM_271_TO_3OO_Days_N;
+	DROP FROM_3O1_TO_33O_Days_N;
+	DROP FROM_331_TO_365_Days_N;
+	DROP Year_2_N;
+	DROP Year_3_N;
+	DROP Year_4_N;
+	DROP Year_5_N;
+	DROP Year_6_N;
+	DROP Year_6M_N;
+	DROP DEBT;
+	DROP CREDIT;
+	DROP CHECK;
+	DROP LESS_O_Days_N_AGR;
+	DROP FROM_O_TO_3O_Days_N_AGR;
+	DROP FROM_31_TO_6O_Days_N_AGR;
+	DROP FROM_61_TO_9O_Days_N_AGR;
+	DROP FROM_91_TO_12O_Days_N_AGR;
+	DROP FROM_121_TO_15O_Days_N_AGR;
+	DROP FROM_151_TO_18O_Days_N_AGR;
+	DROP FROM_181_TO_21O_Days_N_AGR;
+	DROP FROM_211_TO_24O_Days_N_AGR;
+	DROP FROM_241_TO_27O_Days_N_AGR;
+	DROP FROM_271_TO_3OO_Days_N_AGR;
+	DROP FROM_3O1_TO_33O_Days_N_AGR;
+	DROP FROM_331_TO_365_Days_N_AGR;
+	DROP Year_2_N_AGR;
+	DROP Year_3_N_AGR;
+	DROP Year_4_N_AGR;
+	DROP Year_5_N_AGR;
+	DROP Year_6_N_AGR;
+	DROP Year_6M_N_AGR;
+
+run;
+
+/*Renamed the columns*/
+DATA SME;
+	SET SME;
+	RENAME LESS_O_Days_P_AGR_UP = LESS_O_Days_P;
+	RENAME FROM_O_TO_3O_Days_P_AGR_UP = FROM_O_TO_3O_Days_P;
+	RENAME FROM_31_TO_6O_Days_P_AGR_UP = FROM_31_TO_6O_Days_P;
+	RENAME FROM_61_TO_9O_Days_P_AGR_UP = FROM_61_TO_9O_Days_P;
+	RENAME FROM_91_TO_12O_Days_P_AGR_UP = FROM_91_TO_12O_Days_P;
+	RENAME FROM_121_TO_15O_Days_P_AGR_UP = FROM_121_TO_15O_Days_P;
+	RENAME FROM_151_TO_18O_Days_P_AGR_UP = FROM_151_TO_18O_Days_P;
+	RENAME FROM_181_TO_21O_Days_P_AGR_UP = FROM_181_TO_21O_Days_P;
+	RENAME FROM_211_TO_24O_Days_P_AGR_UP = FROM_211_TO_24O_Days_P;
+	RENAME FROM_241_TO_27O_Days_P_AGR_UP = FROM_241_TO_27O_Days_P;
+	RENAME FROM_271_TO_3OO_Days_P_AGR_UP = FROM_271_TO_3OO_Days_P;
+	RENAME FROM_3O1_TO_33O_Days_P_AGR_UP = FROM_3O1_TO_33O_Days_P;
+	RENAME FROM_331_TO_365_Days_P_AGR_UP = FROM_331_TO_365_Days_P;
+	RENAME Year_2_P_AGR_UP = Year_2_P;
+	RENAME Year_3_P_AGR_UP = Year_3_P;
+	RENAME Year_4_P_AGR_UP = Year_4_P;
+	RENAME Year_5_P_AGR_UP = Year_5_P;
+	RENAME Year_6_P_AGR_UP = Year_6_P;
+	RENAME Year_6M_P_AGR_UP = Year_6M_P;
+
+
+RUN;
+
+/*12.3 CREATE THE SUBTABLE NONCORP*/
+DATA NONCORP;
+	RETAIN type cust_ref group LESS_O_Days_P_AGR	FROM_O_TO_3O_Days_P_AGR	FROM_31_TO_6O_Days_P_AGR	FROM_61_TO_9O_Days_P_AGR	FROM_91_TO_12O_Days_P_AGR	FROM_121_TO_15O_Days_P_AGR	FROM_151_TO_18O_Days_P_AGR	FROM_181_TO_21O_Days_P_AGR	FROM_211_TO_24O_Days_P_AGR	FROM_241_TO_27O_Days_P_AGR	FROM_271_TO_3OO_Days_P_AGR	FROM_3O1_TO_33O_Days_P_AGR	FROM_331_TO_365_Days_P_AGR	Year_2_P_AGR	Year_3_P_AGR	Year_4_P_AGR	Year_5_P_AGR	Year_6_P_AGR	Year_6M_P_AGR
+;
+	SET NCGAGEDDEBT;
+	TYPE = 'NonCorp';
+	GRAND_TOTAL = SUM(of LESS_O_Days_P_AGR	FROM_O_TO_3O_Days_P_AGR	FROM_31_TO_6O_Days_P_AGR	FROM_61_TO_9O_Days_P_AGR	FROM_91_TO_12O_Days_P_AGR	FROM_121_TO_15O_Days_P_AGR	FROM_151_TO_18O_Days_P_AGR	FROM_181_TO_21O_Days_P_AGR	FROM_211_TO_24O_Days_P_AGR	FROM_241_TO_27O_Days_P_AGR	FROM_271_TO_3OO_Days_P_AGR	FROM_3O1_TO_33O_Days_P_AGR	FROM_331_TO_365_Days_P_AGR	Year_2_P_AGR	Year_3_P_AGR	Year_4_P_AGR	Year_5_P_AGR	Year_6_P_AGR	Year_6M_P_AGR
+);
+
+	DROP LESS_O_Days;
+	DROP FROM_O_TO_3O_Days;
+	DROP FROM_31_TO_6O_Days;
+	DROP FROM_61_TO_9O_Days;
+	DROP FROM_91_TO_12O_Days;
+	DROP FROM_121_TO_15O_Days;
+	DROP FROM_151_TO_18O_Days;
+	DROP FROM_181_TO_21O_Days;
+	DROP FROM_211_TO_24O_Days;
+	DROP FROM_241_TO_27O_Days;
+	DROP FROM_271_TO_3OO_Days;
+	DROP FROM_3O1_TO_33O_Days;
+	DROP FROM_331_TO_365_Days;
+	DROP Year_2;
+	DROP Year_3;
+	DROP Year_4;
+	DROP Year_5;
+	DROP Year_6;
+	DROP Year_6M;
+	DROP GRAN_TOTAL;
+	DROP LESS_O_Days_P_AGR;
+	DROP FROM_O_TO_3O_Days_P_AGR;
+	DROP FROM_31_TO_6O_Days_P_AGR;
+	DROP FROM_61_TO_9O_Days_P_AGR;
+	DROP FROM_91_TO_12O_Days_P_AGR;
+	DROP FROM_121_TO_15O_Days_P_AGR;
+	DROP FROM_151_TO_18O_Days_P_AGR;
+	DROP FROM_181_TO_21O_Days_P_AGR;
+	DROP FROM_211_TO_24O_Days_P_AGR;
+	DROP FROM_241_TO_27O_Days_P_AGR;
+	DROP FROM_271_TO_3OO_Days_P_AGR;
+	DROP FROM_3O1_TO_33O_Days_P_AGR;
+	DROP FROM_331_TO_365_Days_P_AGR;
+	DROP Year_2_P_AGR;
+	DROP Year_3_P_AGR;
+	DROP Year_4_P_AGR;
+	DROP Year_5_P_AGR;
+	DROP Year_6_P_AGR;
+	DROP Year_6M_P_AGR;
+	DROP LESS_O_Days_N;
+	DROP FROM_O_TO_3O_Days_N;
+	DROP FROM_31_TO_6O_Days_N;
+	DROP FROM_61_TO_9O_Days_N;
+	DROP FROM_91_TO_12O_Days_N;
+	DROP FROM_121_TO_15O_Days_N;
+	DROP FROM_151_TO_18O_Days_N;
+	DROP FROM_181_TO_21O_Days_N;
+	DROP FROM_211_TO_24O_Days_N;
+	DROP FROM_241_TO_27O_Days_N;
+	DROP FROM_271_TO_3OO_Days_N;
+	DROP FROM_3O1_TO_33O_Days_N;
+	DROP FROM_331_TO_365_Days_N;
+	DROP Year_2_N;
+	DROP Year_3_N;
+	DROP Year_4_N;
+	DROP Year_5_N;
+	DROP Year_6_N;
+	DROP Year_6M_N;
+	DROP DEBT;
+	DROP CREDIT;
+	DROP CHECK;
+	DROP LESS_O_Days_N_AGR;
+	DROP FROM_O_TO_3O_Days_N_AGR;
+	DROP FROM_31_TO_6O_Days_N_AGR;
+	DROP FROM_61_TO_9O_Days_N_AGR;
+	DROP FROM_91_TO_12O_Days_N_AGR;
+	DROP FROM_121_TO_15O_Days_N_AGR;
+	DROP FROM_151_TO_18O_Days_N_AGR;
+	DROP FROM_181_TO_21O_Days_N_AGR;
+	DROP FROM_211_TO_24O_Days_N_AGR;
+	DROP FROM_241_TO_27O_Days_N_AGR;
+	DROP FROM_271_TO_3OO_Days_N_AGR;
+	DROP FROM_3O1_TO_33O_Days_N_AGR;
+	DROP FROM_331_TO_365_Days_N_AGR;
+	DROP Year_2_N_AGR;
+	DROP Year_3_N_AGR;
+	DROP Year_4_N_AGR;
+	DROP Year_5_N_AGR;
+	DROP Year_6_N_AGR;
+	DROP Year_6M_N_AGR;
+
+run;
+
+/*Renamed the columns*/
+DATA NONCORP;
+	SET NONCORP;
+	RENAME LESS_O_Days_P_AGR_UP = LESS_O_Days_P;
+	RENAME FROM_O_TO_3O_Days_P_AGR_UP = FROM_O_TO_3O_Days_P;
+	RENAME FROM_31_TO_6O_Days_P_AGR_UP = FROM_31_TO_6O_Days_P;
+	RENAME FROM_61_TO_9O_Days_P_AGR_UP = FROM_61_TO_9O_Days_P;
+	RENAME FROM_91_TO_12O_Days_P_AGR_UP = FROM_91_TO_12O_Days_P;
+	RENAME FROM_121_TO_15O_Days_P_AGR_UP = FROM_121_TO_15O_Days_P;
+	RENAME FROM_151_TO_18O_Days_P_AGR_UP = FROM_151_TO_18O_Days_P;
+	RENAME FROM_181_TO_21O_Days_P_AGR_UP = FROM_181_TO_21O_Days_P;
+	RENAME FROM_211_TO_24O_Days_P_AGR_UP = FROM_211_TO_24O_Days_P;
+	RENAME FROM_241_TO_27O_Days_P_AGR_UP = FROM_241_TO_27O_Days_P;
+	RENAME FROM_271_TO_3OO_Days_P_AGR_UP = FROM_271_TO_3OO_Days_P;
+	RENAME FROM_3O1_TO_33O_Days_P_AGR_UP = FROM_3O1_TO_33O_Days_P;
+	RENAME FROM_331_TO_365_Days_P_AGR_UP = FROM_331_TO_365_Days_P;
+	RENAME Year_2_P_AGR_UP = Year_2_P;
+	RENAME Year_3_P_AGR_UP = Year_3_P;
+	RENAME Year_4_P_AGR_UP = Year_4_P;
+	RENAME Year_5_P_AGR_UP = Year_5_P;
+	RENAME Year_6_P_AGR_UP = Year_6_P;
+	RENAME Year_6M_P_AGR_UP = Year_6M_P;
+
+
+RUN;
+
+
+/*12.4 CREATE A GLOBAL TABLE WITH ALL THE INFO OF THE SUBTABLES ON IT*/
+DATA GLOBAL_AGED_DEBT;
+	SET CORP NONCORP SME;
+RUN;
+
+/*12.5 APPLY A SUM BETWEEN THE TWO INICIAL AGGREGATED COLUMNS AND THE TWO FINAL AGGREGATED COLUMNS
+AND RENAME THE RESULTANT COLUMNS*/
+DATA GAD;
+	SET GLOBAL_AGED_DEBT;
+
+	NUEVA_1 = LESS_O_Days_P + FROM_O_TO_3O_Days_P;
+	NUEVA_2 = Year_6_P	+  Year_6M_P;
+	name = group;
+
+	DROP LESS_O_Days_P;
+	DROP FROM_O_TO_3O_Days_P;
+	DROP Year_6_P;
+	DROP Year_6M_P;
+	drop group;
+
+	RENAME 	NUEVA_1 = FROM_O_TO_3O_Days_P;
+	RENAME  NUEVA_2 = Year_6_P;
+	
+
+RUN;
+
+/*12.6 SORT THE COLUMNS IN A PROPER WAY*/
+DATA GAD;
+	RETAIN type 	cust_ref 	name 	GRAND_TOTAL  	FROM_O_TO_3O_Days_P	FROM_31_TO_6O_Days_P	FROM_61_TO_9O_Days_P	FROM_91_TO_12O_Days_P	FROM_121_TO_15O_Days_P	FROM_151_TO_18O_Days_P	FROM_181_TO_21O_Days_P	FROM_211_TO_24O_Days_P	FROM_241_TO_27O_Days_P	FROM_271_TO_3OO_Days_P	FROM_3O1_TO_33O_Days_P	FROM_331_TO_365_Days_P	Year_2_P	Year_3_P	Year_4_P	Year_5_P	Year_6_P;
+	set gad;
+RUN;
+
+/*12.7 ADD THE NAMES TO THE PREVIOS TABLE FROM ADDNAMES (STEP 2.10)*/
+PROC SQL;
+	CREATE TABLE GAD2
+	AS
+	SELECT DISTINCT A.*, B.cust_name
+	FROM GAD AS A, ADDNAMES AS B
+	WHERE A.cust_ref = B.cust_ref;
+QUIT;
+
+/*DROPING THE EXCESS COLUMNS*/
+DATA GAD2;
+SET GAD2;	
+	DROP name;
+RUN;
+
+/*SORT AND RENAME THE COLUMN ADDED*/
+DATA GAD2;
+	RETAIN type 	cust_ref 	cust_name 	GRAND_TOTAL  	FROM_O_TO_3O_Days_P	FROM_31_TO_6O_Days_P	FROM_61_TO_9O_Days_P	FROM_91_TO_12O_Days_P	FROM_121_TO_15O_Days_P	FROM_151_TO_18O_Days_P	FROM_181_TO_21O_Days_P	FROM_211_TO_24O_Days_P	FROM_241_TO_27O_Days_P	FROM_271_TO_3OO_Days_P	FROM_3O1_TO_33O_Days_P	FROM_331_TO_365_Days_P	Year_2_P	Year_3_P	Year_4_P	Year_5_P	Year_6_P		;
+	set gad2;
+	RENAME cust_name = name;
+	LABEL name = 'name';
+RUN;
+
+DATA GAD2;
+	set gad2;
+	LABEL name = 'name';
+RUN;
+
+/*KEEP ALL THE INFO THAT IS NOT 'CORP' ABOUT*/
+PROC SQL;
+	DELETE 
+	FROM GAD
+	WHERE GAD.Type <> 'Corp';
+
+QUIT;
+
+/*MERGE AND EXPORT*/
+DATA GLOBAL_AGED_DEBT;
+	SET GAD2 GAD;
+	DROP CHECK;
+RUN;
+
+DATA GLOBAL_AGED_DEBT;
+	RETAIN type 	cust_ref 	name 	GRAND_TOTAL  	FROM_O_TO_3O_Days_P	FROM_31_TO_6O_Days_P	FROM_61_TO_9O_Days_P	FROM_91_TO_12O_Days_P	FROM_121_TO_15O_Days_P	FROM_151_TO_18O_Days_P	FROM_181_TO_21O_Days_P	FROM_211_TO_24O_Days_P	FROM_241_TO_27O_Days_P	FROM_271_TO_3OO_Days_P	FROM_3O1_TO_33O_Days_P	FROM_331_TO_365_Days_P	Year_2_P	Year_3_P	Year_4_P	Year_5_P	Year_6_P		;
+	set GLOBAL_AGED_DEBT;
+	GRAND_TOTAL = SUM(of FROM_O_TO_3O_Days_P	FROM_31_TO_6O_Days_P	FROM_61_TO_9O_Days_P	FROM_91_TO_12O_Days_P	FROM_121_TO_15O_Days_P	FROM_151_TO_18O_Days_P	FROM_181_TO_21O_Days_P	FROM_211_TO_24O_Days_P	FROM_241_TO_27O_Days_P	FROM_271_TO_3OO_Days_P	FROM_3O1_TO_33O_Days_P	FROM_331_TO_365_Days_P	Year_2_P	Year_3_P	Year_4_P	Year_5_P	Year_6_P
+);
+	DROP CHECK;
+RUN;
+
+proc EXPORT DATA = GLOBAL_AGED_DEBT
+
+OUTFILE = "C:/Users/FranciscoM/Desktop/GLOBAL_AGED_DEBT.xlsx"
+DBMS = XLSX
+REPLACE;
+
+RUN;
+
+/*DELETING ALL THE COMPLEMENTARY TABLES*/
+
+PROC DATASETS LIB = WORK KILL; RUN;
+
+/*Summary: We could see a lot of important tools that SAS allow us to use:
+			- SQL procedure (QUERIES, JOINS, TABLE CREATION)
+			- Tabulate (to create pivot tables with SAS)
+			- Data processing
+
+And with those tools, adding the data files used for this program, we can obtain a formal 
+debt report, where we can check all the debt splitted into time periods, allow us to 
+understand which customers are more difficult to them to pay and create an strategical way
+to recover that kind of debt.
+*/
