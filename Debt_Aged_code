@@ -13,7 +13,7 @@ the actual debt that the company must handle and what is their distribution in t
 /*STEP 1: Import Files to start the process*/
 
 /*1.1 Import Aged Debt: this is the file that contains all the info about the customers*/
-PROC IMPORT DATAFILE = "C:/Users/FranciscoM/Desktop/Debt Process/DB/Aged Debtors Position.xlsx"
+PROC IMPORT DATAFILE = "C:/...your folder path.../Aged Debtors Position.xlsx"
 	OUT = WORK.AgedDebt
 	DBMS = XLSX
 	REPLACE;
@@ -22,7 +22,7 @@ RUN;
 
 /*1.2 Import Lpf in debtors: this is the file that contains all the late payments (debtor that we must 
  erase from the debt)*/
-PROC IMPORT DATAFILE = "C:/Users/FranciscoM/Desktop/Debt Process/DB/LPF in Debtors.xlsx"
+PROC IMPORT DATAFILE = "C:/...your folder path.../LPF in Debtors.xlsx"
 	OUT = WORK.LPF
 	DBMS = XLSX
 	REPLACE;
@@ -183,7 +183,7 @@ QUIT;
 GLOBAL_AGED_DEBT*/
 proc EXPORT DATA = UND
 
-OUTFILE = "C:/Users/FranciscoM/Desktop/GLOBAL_AGED_DEBT.xlsx"
+OUTFILE = "C:/...your folder path.../GLOBAL_AGED_DEBT.xlsx"
 DBMS = XLSX REPLACE;
 sheet= 'Unmeasured_not_due';
 
@@ -211,7 +211,7 @@ PROC DELETE DATA = WORK.AGEDDEBT2 WORK.UND WORK.DEADLINE;RUN;
 
 /*1.3 Import  Non Bills Revised: This are the latest payment list for each customer, so
 we must add this payments to our final table*/
-PROC IMPORT DATAFILE = "C:/Users/FranciscoM/Desktop/Debt Process/DB/non bills revised.xlsx"
+PROC IMPORT DATAFILE = "C:/...your folder path.../non bills revised.xlsx"
 	OUT = WORK.NONBILLS
 	DBMS = XLSX
 	REPLACE;
@@ -219,7 +219,7 @@ RUN;
 
 /*1.4 Import group identifier (to identify if the companies are Group Corporations, Non group Corporations,
 or just small business)*/
-PROC IMPORT DATAFILE = "C:/Users/FranciscoM/Desktop/Debt Process/DB/Copy of group identifier.xlsx"
+PROC IMPORT DATAFILE = "C:/...your folder path.../Copy of group identifier.xlsx"
 	OUT = WORK.GROUPE
 	DBMS = XLSX
 	REPLACE;
@@ -227,7 +227,7 @@ PROC IMPORT DATAFILE = "C:/Users/FranciscoM/Desktop/Debt Process/DB/Copy of grou
 RUN;
 
 /*1.5 Import corp (no SME) identifier*/
-PROC IMPORT DATAFILE = "C:/Users/FranciscoM/Desktop/Debt Process/DB/Copy of group identifier.xlsx"
+PROC IMPORT DATAFILE = "C:/...your folder path.../Copy of group identifier.xlsx"
 	OUT = WORK.CORP
 	DBMS = XLSX
 	REPLACE;
@@ -411,7 +411,7 @@ quit;
 /*A.1.2 Export the LPF_Summary Table*/
 proc EXPORT DATA = LPF_Summary
 
-OUTFILE = "C:/Users/FranciscoM/Desktop/GLOBAL_AGED_DEBT.xlsx"
+OUTFILE = "C:/...your folder path.../GLOBAL_AGED_DEBT.xlsx"
 DBMS = XLSX REPLACE;
 sheet= 'LPF_Summary';
 
@@ -529,7 +529,7 @@ run;
 for every cust_ref*/
 
 /*OBS: I NEED TO PUT THE CORRECT PATH TO PUT THE SAMPLE EXCEL*/
-ods excel file = "C:/Users/FranciscoM/Desktop/SAMPLE.xlsx"; 
+ods excel file = "C:/...your folder path.../SAMPLE.xlsx"; 
 proc tabulate
 	data = sme;
 	/*THE COLUMNS TO SEGMENTATE*/
@@ -540,7 +540,7 @@ run;
 ods excel close;
 
 /*5.2 Import the pivot table to SAS*/
-PROC IMPORT DATAFILE = "C:/Users/FranciscoM/Desktop/SAMPLE.xlsx"
+PROC IMPORT DATAFILE = "C:/...your folder path.../SAMPLE.xlsx"
 	OUT = WORK.SMEAGEDDEBT
 	DBMS = XLSX
 	REPLACE;
@@ -931,7 +931,7 @@ QUIT;
 
 /*9.2 Use proc tabulate to create a pivot table adding up the total_bar_clear column in each Aged_Band
 for every cust_ref*/
-ods excel file = "C:/Users/FranciscoM/Desktop/SAMPLE.xlsx"; 
+ods excel file = "C:/...your folder path.../SAMPLE.xlsx"; 
 proc tabulate
 	data = NCGAGEDDEBT;
 	class AGED_BANDS cust_ref;
@@ -941,7 +941,7 @@ run;
 ods excel close;
 
 /*9.3 Import the pivot table to SAS*/
-PROC IMPORT DATAFILE = "C:/Users/FranciscoM/Desktop/SAMPLE.xlsx"
+PROC IMPORT DATAFILE = "C:/...your folder path.../SAMPLE.xlsx"
 	OUT = WORK.NCGAGEDDEBT2
 	DBMS = XLSX
 	REPLACE;
@@ -1273,7 +1273,7 @@ QUIT;
 
 /*10.2 Use proc tabulate to create a pivot table adding up the total_bar_clear column in each Aged_Band
 for every cust_ref*/
-ods excel file = "C:/Users/FranciscoM/Desktop/SAMPLE.xlsx"; 
+ods excel file = "C:/...your folder path.../SAMPLE.xlsx"; 
 proc tabulate
 	data = CGAGEDDEBT;
 	/*THE COLUMNS TO SEGMENTATE*/
@@ -1284,7 +1284,7 @@ run;
 ods excel close;
 
 /*10.3 Import the pivot table to SAS*/
-PROC IMPORT DATAFILE = "C:/Users/FranciscoM/Desktop/SAMPLE.xlsx"
+PROC IMPORT DATAFILE = "C:/...your folder path.../SAMPLE.xlsx"
 	OUT = WORK.CGAGEDDEBT2
 	DBMS = XLSX
 	REPLACE;
@@ -1379,7 +1379,7 @@ quit;
 /*And we finish with the export of this number*/
 proc EXPORT DATA = NB_resume
 
-OUTFILE = "C:/Users/FranciscoM/Desktop/GLOBAL_AGED_DEBT.xlsx"
+OUTFILE = "C:/...your folder path.../GLOBAL_AGED_DEBT.xlsx"
 DBMS = XLSX REPLACE;
 sheet= 'Non_bil_adjust';
 
@@ -1662,7 +1662,7 @@ quit;
 /*A.3.5 And we finish with the export of this number*/
 proc EXPORT DATA = Credit_resume4
 
-OUTFILE = "C:/Users/FranciscoM/Desktop/GLOBAL_AGED_DEBT.xlsx"
+OUTFILE = "C:/...your folder path.../GLOBAL_AGED_DEBT.xlsx"
 DBMS = XLSX REPLACE;
 sheet= 'Plus_credit_cust';
 
@@ -2165,7 +2165,7 @@ RUN;
 
 proc EXPORT DATA = GLOBAL_AGED_DEBT
 
-OUTFILE = "C:/Users/FranciscoM/Desktop/GLOBAL_AGED_DEBT.xlsx"
+OUTFILE = "C:/...your folder path.../GLOBAL_AGED_DEBT.xlsx"
 DBMS = XLSX
 REPLACE;
 
